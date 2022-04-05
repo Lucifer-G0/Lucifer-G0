@@ -8,6 +8,15 @@ sed -i "6i $1" CMakeLists.txt
 mkdir $1
 cd $1
 touch "$1.cpp"
+cppfile="$1.cpp"
+echo "">>$cppfile
+echo "">>$cppfile
+echo "int main()">>$cppfile
+echo "{">>$cppfile
+echo "">>$cppfile
+echo "">>$cppfile
+echo "}">>$cppfile
+
 mkdir build
 
 # create CMakeLists.txt init with pcl
