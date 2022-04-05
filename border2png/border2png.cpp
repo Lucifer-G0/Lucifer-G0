@@ -6,7 +6,7 @@
 #include <pcl/common/file_io.h> // for getFilenameWithoutExtension
 
 #include <iostream>
-
+#include <opencv2/opencv.hpp>
 
 typedef pcl::PointXYZ PointT;
 typedef pcl::PointCloud<PointT> PointCloudT;
@@ -20,6 +20,7 @@ float angular_resolution = 0.5f;
 pcl::RangeImage::CoordinateFrame coordinate_frame = pcl::RangeImage::CAMERA_FRAME;
 bool setUnseenToMaxRange = false;
 
+cv::Mat border2png(pcl::PointCloud<pcl::PointWithRange>::Ptr border_points_ptr,string filename="../res/00000-color.png");
 
 int main(int argc, char ** argv)
 {
@@ -116,6 +117,9 @@ int main(int argc, char ** argv)
 	viewer.setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 7, "border points");
 
 	cout<<"border_points_ptr has "<<border_points_ptr->size()<<" points"<<endl;
+  writer.writeASCII("borer_points.pcd",*border_points_ptr);
+
+  border2png(border_points_ptr);
 
 	while (!viewer.wasStopped ())
 	{
@@ -130,7 +134,21 @@ int main(int argc, char ** argv)
 /*
     @brief draw border to png
 */
-void border2png()
+cv::Mat border2png(pcl::PointCloud<pcl::PointWithRange>::Ptr border_points_ptr,string filename)
 {
+  cv::Mat image;
+  image = cv::imread( filename, 1 );
 
+  float constant = 570.3;
+
+  for (auto& border_point: *border_points_ptr)
+  {
+    cv::Point point;//特征点，用以画在图像中  
+	  point.x = border_point.x * constant / border_point.z + 320; // grid_x = x * constant / depth
+	  point.y = border_point.y * constant / border_point.z + 240;
+    cv::circle(image, point, 1, cv::Scalar(0, 0, 255));
+  }
+  // cv::imshow("border test",image);
+  // cv::waitKey(0);
+  return image;
 }
