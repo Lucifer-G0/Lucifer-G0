@@ -176,16 +176,14 @@ cv::Mat border2png(pcl::PointCloud<PointWR>::Ptr border_points_ptr,string filena
 }
 
 /*
-    @brief  border to png, add cluster extract
+    @brief  border to png, add cluster extract, use window instead of points to draw on the image
 */
 cv::Mat border2png2(pcl::PointCloud<PointWR>::Ptr border_points_ptr,string filename)
 {
   // Euclidean Cluster Extract
-
   pcl::search::KdTree<PointWR>::Ptr tree (new pcl::search::KdTree<PointWR>);
   tree->setInputCloud (border_points_ptr);
   cout<<"border_points_ptr has "<<border_points_ptr->size()<<" points"<<endl;
-
   std::vector<pcl::PointIndices> cluster_indices;
   pcl::EuclideanClusterExtraction<PointWR> ec;
   ec.setClusterTolerance (1);
@@ -198,7 +196,6 @@ cv::Mat border2png2(pcl::PointCloud<PointWR>::Ptr border_points_ptr,string filen
   // read png image and set constant
   cv::Mat image;
   image = cv::imread( filename, 1 );
-  float constant = 570.3;
 
   //存储所有检测到的物体窗口，或者可以取消他在循环里面直接画到图上。
   std::vector<ObjectWindow> object_windows;
@@ -219,21 +216,22 @@ cv::Mat border2png2(pcl::PointCloud<PointWR>::Ptr border_points_ptr,string filen
         cloud_cluster->push_back (border_point); //*
         object_window.add_point(border_point);
     }
-      
-    cloud_cluster->width = cloud_cluster->size ();
-    cloud_cluster->height = 1;
-    cloud_cluster->is_dense = true;
-
+    
     object_window.update();
     object_window.output();
     image=object_window.draw(image);
     object_windows.push_back(object_window);
 
+    // cloud_cluster reset
+    cloud_cluster->width = cloud_cluster->size ();
+    cloud_cluster->height = 1;
+    cloud_cluster->is_dense = true;
     // save cluster to pcd 
     std::cout << "PointCloud representing the Cluster: " << cloud_cluster->size () << " data points." << std::endl;
     std::stringstream ss;
     ss << "cloud_cluster_" << j << ".pcd";
     writer.write<PointWR> (ss.str (), *cloud_cluster, false); //*
+    
     j++;
   }
 
