@@ -208,8 +208,8 @@ cv::Mat border2png2(pcl::PointCloud<PointWR>::Ptr border_points_ptr,string filen
   // 外循环 循环所有聚类
   for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin (); it != cluster_indices.end (); ++it)
   {
-    // set min to MAX so that it will changed immediately when compare
-    float min_x=VTK_FLOAT_MAX, min_y=VTK_FLOAT_MAX, max_x=VTK_FLOAT_MIN, max_y=VTK_FLOAT_MIN;
+
+    ObjectWindow object_window;
 
     pcl::PointCloud<PointWR>::Ptr cloud_cluster (new pcl::PointCloud<PointWR>);
     //内循环 循环一个聚类内部的所有点
@@ -217,40 +217,19 @@ cv::Mat border2png2(pcl::PointCloud<PointWR>::Ptr border_points_ptr,string filen
     {
         PointWR border_point=(*border_points_ptr)[idx];
         cloud_cluster->push_back (border_point); //*
-
-        cv::Point point;//特征点，用以画在图像中  
-	      point.x = border_point.x * constant / border_point.z + 320; // grid_x = x * constant / depth
-	      point.y = border_point.y * constant / border_point.z + 240;
-        // draw point to image
-        cv::circle(image, point, 1, cv::Scalar(0, 0, 255));
-
-        if(point.x < min_x)
-        {
-          min_x = point.x;
-        }
-        if(point.x > max_x)
-        {
-          max_x = point.x;
-        }
-        if(point.y < min_y)
-        {
-          min_y = point.y;
-        }
-        if(point.y > max_y)
-        {
-          max_y = point.y;
-        }
+        object_window.add_point(border_point);
     }
       
     cloud_cluster->width = cloud_cluster->size ();
     cloud_cluster->height = 1;
     cloud_cluster->is_dense = true;
 
-    ObjectWindow object_window(min_x, min_y, max_x-min_x, max_y-min_y);
+    object_window.update();
     object_window.output();
     image=object_window.draw(image);
     object_windows.push_back(object_window);
 
+    // save cluster to pcd 
     std::cout << "PointCloud representing the Cluster: " << cloud_cluster->size () << " data points." << std::endl;
     std::stringstream ss;
     ss << "cloud_cluster_" << j << ".pcd";
