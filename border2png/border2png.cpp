@@ -4,12 +4,19 @@
 #include <pcl/visualization/pcl_visualizer.h>
 #include <pcl/features/range_image_border_extractor.h>
 #include <pcl/common/file_io.h> // for getFilenameWithoutExtension
+#include <pcl/console/parse.h>
+#include <pcl/segmentation/extract_clusters.h> // Euclidean Cluster Extract
 
 #include <iostream>
 #include <opencv2/opencv.hpp>
 
+#include "ObjectWindow.h"
+
 typedef pcl::PointXYZ PointT;
 typedef pcl::PointCloud<PointT> PointCloudT;
+typedef pcl::PointWithRange PointWR;
+
+
 
 using namespace std;
 
@@ -20,10 +27,21 @@ float angular_resolution = 0.5f;
 pcl::RangeImage::CoordinateFrame coordinate_frame = pcl::RangeImage::CAMERA_FRAME;
 bool setUnseenToMaxRange = false;
 
-cv::Mat border2png(pcl::PointCloud<pcl::PointWithRange>::Ptr border_points_ptr,string filename="../res/00000-color.png");
+float ec_cluster_tolerance=1.0f;
+
+cv::Mat border2png(pcl::PointCloud<PointWR>::Ptr border_points_ptr,string filename="../res/00000-color.png");
+cv::Mat border2png2(pcl::PointCloud<PointWR>::Ptr border_points_ptr,string filename="../res/00000-color.png");
+void cluster_draw(string filename );
+
 
 int main(int argc, char ** argv)
 {
+    // --------------------------------------
+    // -----Parse Command Line Arguments-----
+    // --------------------------------------
+    if (pcl::console::parse (argc, argv, "-t", ec_cluster_tolerance) >= 0)
+        std::cout << "Setting ec_cluster_tolerance to "<<ec_cluster_tolerance<<"deg.\n";
+
     pcl::PCDWriter writer;
 
     PointCloudT::Ptr cloud (new PointCloudT);
@@ -94,10 +112,10 @@ int main(int argc, char ** argv)
 	// ----------------------------------
 	// -----Show points in 3D viewer-----
 	// ----------------------------------
-	pcl::PointCloud<pcl::PointWithRange>::Ptr border_points_ptr(new pcl::PointCloud<pcl::PointWithRange>),
-	                                          veil_points_ptr(new pcl::PointCloud<pcl::PointWithRange>),
-                                            shadow_points_ptr(new pcl::PointCloud<pcl::PointWithRange>);
-    pcl::PointCloud<pcl::PointWithRange>& border_points = *border_points_ptr,
+	pcl::PointCloud<PointWR>::Ptr border_points_ptr(new pcl::PointCloud<PointWR>),
+	                                          veil_points_ptr(new pcl::PointCloud<PointWR>),
+                                            shadow_points_ptr(new pcl::PointCloud<PointWR>);
+    pcl::PointCloud<PointWR>& border_points = *border_points_ptr,
                                       & veil_points = * veil_points_ptr,
                                       & shadow_points = *shadow_points_ptr;
     for (int y=0; y< (int)range_image.height; ++y)
@@ -112,29 +130,34 @@ int main(int argc, char ** argv)
 				shadow_points.push_back (range_image[y*range_image.width + x]);
 		}
 	}
-	pcl::visualization::PointCloudColorHandlerCustom<pcl::PointWithRange> border_points_color_handler (border_points_ptr, 0, 255, 0);
-	viewer.addPointCloud<pcl::PointWithRange> (border_points_ptr, border_points_color_handler, "border points");
+	pcl::visualization::PointCloudColorHandlerCustom<PointWR> border_points_color_handler (border_points_ptr, 0, 255, 0);
+	viewer.addPointCloud<PointWR> (border_points_ptr, border_points_color_handler, "border points");
 	viewer.setPointCloudRenderingProperties (pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 7, "border points");
 
 	cout<<"border_points_ptr has "<<border_points_ptr->size()<<" points"<<endl;
   writer.writeASCII("borer_points.pcd",*border_points_ptr);
 
-  border2png(border_points_ptr);
+  
+  
+  cv::Mat image;
+  image=border2png2(border_points_ptr);
+  cv::imshow("border test",image);
+  cv::waitKey(0);
 
-	while (!viewer.wasStopped ())
-	{
-		// range_image_borders_widget->spinOnce ();
-		viewer.spinOnce ();
-		pcl_sleep(0.01);
-	}
+	// while (!viewer.wasStopped ())
+	// {
+	// 	// range_image_borders_widget->spinOnce ();
+	// 	viewer.spinOnce ();
+	// 	pcl_sleep(0.01);
+	// }
 
 
 }
 
 /*
-    @brief draw border to png
+    @brief  border to png
 */
-cv::Mat border2png(pcl::PointCloud<pcl::PointWithRange>::Ptr border_points_ptr,string filename)
+cv::Mat border2png(pcl::PointCloud<PointWR>::Ptr border_points_ptr,string filename)
 {
   cv::Mat image;
   image = cv::imread( filename, 1 );
@@ -148,7 +171,107 @@ cv::Mat border2png(pcl::PointCloud<pcl::PointWithRange>::Ptr border_points_ptr,s
 	  point.y = border_point.y * constant / border_point.z + 240;
     cv::circle(image, point, 1, cv::Scalar(0, 0, 255));
   }
-  // cv::imshow("border test",image);
-  // cv::waitKey(0);
+  
   return image;
+}
+
+/*
+    @brief  border to png, add cluster extract
+*/
+cv::Mat border2png2(pcl::PointCloud<PointWR>::Ptr border_points_ptr,string filename)
+{
+  // Euclidean Cluster Extract
+
+  pcl::search::KdTree<PointWR>::Ptr tree (new pcl::search::KdTree<PointWR>);
+  tree->setInputCloud (border_points_ptr);
+  cout<<"border_points_ptr has "<<border_points_ptr->size()<<" points"<<endl;
+
+  std::vector<pcl::PointIndices> cluster_indices;
+  pcl::EuclideanClusterExtraction<PointWR> ec;
+  ec.setClusterTolerance (1);
+  ec.setMinClusterSize (3);
+  ec.setMaxClusterSize (100);
+  ec.setSearchMethod (tree);
+  ec.setInputCloud (border_points_ptr);
+  ec.extract (cluster_indices);
+
+  // read png image and set constant
+  cv::Mat image;
+  image = cv::imread( filename, 1 );
+  float constant = 570.3;
+
+  //存储所有检测到的物体窗口，或者可以取消他在循环里面直接画到图上。
+  std::vector<ObjectWindow> object_windows;
+  pcl::PCDWriter writer;
+
+  int j = 0;
+  // 外循环 循环所有聚类
+  for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin (); it != cluster_indices.end (); ++it)
+  {
+    // set min to MAX so that it will changed immediately when compare
+    float min_x=VTK_FLOAT_MAX, min_y=VTK_FLOAT_MAX, max_x=VTK_FLOAT_MIN, max_y=VTK_FLOAT_MIN;
+
+    pcl::PointCloud<PointWR>::Ptr cloud_cluster (new pcl::PointCloud<PointWR>);
+    //内循环 循环一个聚类内部的所有点
+    for (const auto& idx : it->indices)
+    {
+        PointWR border_point=(*border_points_ptr)[idx];
+        cloud_cluster->push_back (border_point); //*
+
+        cv::Point point;//特征点，用以画在图像中  
+	      point.x = border_point.x * constant / border_point.z + 320; // grid_x = x * constant / depth
+	      point.y = border_point.y * constant / border_point.z + 240;
+        // draw point to image
+        cv::circle(image, point, 1, cv::Scalar(0, 0, 255));
+
+        if(point.x < min_x)
+        {
+          min_x = point.x;
+        }
+        if(point.x > max_x)
+        {
+          max_x = point.x;
+        }
+        if(point.y < min_y)
+        {
+          min_y = point.y;
+        }
+        if(point.y > max_y)
+        {
+          max_y = point.y;
+        }
+    }
+      
+    cloud_cluster->width = cloud_cluster->size ();
+    cloud_cluster->height = 1;
+    cloud_cluster->is_dense = true;
+
+    ObjectWindow object_window(min_x, min_y, max_x-min_x, max_y-min_y);
+    object_window.output();
+    image=object_window.draw(image);
+    object_windows.push_back(object_window);
+
+    std::cout << "PointCloud representing the Cluster: " << cloud_cluster->size () << " data points." << std::endl;
+    std::stringstream ss;
+    ss << "cloud_cluster_" << j << ".pcd";
+    writer.write<PointWR> (ss.str (), *cloud_cluster, false); //*
+    j++;
+  }
+
+  return image;
+}
+
+void cluster_draw(string filename )
+{
+  int j=0; // total cluster num, need change
+
+  std::stringstream ss;
+  ss<<"pcl_viewer -cam "<<pcl::getFilenameWithoutExtension (filename)<<".cam ";
+  for(int i=0;i<j;i++)
+  {
+    ss << " -ps 20  cloud_cluster_" << i << ".pcd";
+  }
+  ss<<" -ps 1 "<<filename;
+  std::cerr<<ss.str()<<std::endl;
+  system(ss.str().c_str());
 }
