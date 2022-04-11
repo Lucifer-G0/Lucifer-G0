@@ -11,8 +11,9 @@ int main(int argc, char **argv)
 {
     PointCloudT::Ptr cloud(new PointCloudT);
     pcl::PCDWriter writer;
-    std::string image_path = "00000-color.png";
-    std::string pcd_path = "blue.pcd";
+    std::string no=argv[1];
+    std::string image_path = "../imgs/000"+no+"-color.png";
+    std::string pcd_path = "../cloud/000"+no+"_cloud_blue.pcd";
 
     // load cloud from pcd file
     pcl::console::print_highlight("Loading point cloud...\n");
