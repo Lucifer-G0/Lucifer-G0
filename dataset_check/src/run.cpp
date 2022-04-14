@@ -22,20 +22,16 @@ int main(int argc, char *argv[])
 	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
 	pcl::PointCloud<pcl::PointXYZ>::Ptr filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>);
 	pcl::PointCloud<pcl::Normal>::Ptr cloud_normals_f (new pcl::PointCloud<pcl::Normal>);
-	pcl::PointCloud<pcl::Normal>::Ptr cloud_normals_o (new pcl::PointCloud<pcl::Normal>);
 	pcl::PointCloud<pcl::Normal>::Ptr cloud_normals_f_f (new pcl::PointCloud<pcl::Normal>);
-	pcl::PointCloud<pcl::Normal>::Ptr cloud_normals_o_f (new pcl::PointCloud<pcl::Normal>);
 	pcl::ExtractIndices<pcl::Normal> extract_normals_f;
-	pcl::ExtractIndices<pcl::Normal> extract_normals_o;
 
 	pcl::io::loadPCDFile("../res/00000_cloud.pcd", *cloud);
 	std::cout << cloud->size() << std::endl;
 
-	pcl::io::loadPCDFile("raw_fnormals.pcd", *cloud_normals_f);
-	pcl::io::loadPCDFile("raw_onormals.pcd", *cloud_normals_o);
-	
+	cloud_normals_f=fast_normal_estimation(cloud,true,"raw");
+
 	std::cout<<"cloud_normals_f has "<<cloud_normals_f->size()<<std::endl;
-	std::cout<<"cloud_normals_o has "<<cloud_normals_o->size()<<std::endl;
+
 	// passthrough filter, remove 0
     pcl::PassThrough<pcl::PointXYZ> pass(true);
     pass.setInputCloud (cloud);
@@ -45,8 +41,8 @@ int main(int argc, char *argv[])
 	pcl::IndicesConstPtr inliers = pass.getRemovedIndices();
 	std::cout<<"inliers has "<<inliers->size()<<std::endl;
 
-    pcl::io::savePCDFile("filtered_cloud.pcd", *filtered_cloud);
-	cout << "save filtered_cloud.pcd finish" << endl;
+    // pcl::io::savePCDFile("filtered_cloud.pcd", *filtered_cloud);
+	// cout << "save filtered_cloud.pcd finish" << endl;
 
     fast_normal_estimation(filtered_cloud,true,"filtered_cloud");
 
@@ -55,13 +51,10 @@ int main(int argc, char *argv[])
   	extract_normals_f.setIndices (inliers);
   	extract_normals_f.filter (*cloud_normals_f_f);
 
-	extract_normals_o.setNegative (true);
-  	extract_normals_o.setInputCloud (cloud_normals_o);
-  	extract_normals_o.setIndices (inliers);
-  	extract_normals_o.filter (*cloud_normals_o_f);
 
 	pcl::io::savePCDFile("filtered_raw_fnormals.pcd", *cloud_normals_f_f);
-	pcl::io::savePCDFile("filtered_raw_onormals.pcd", *cloud_normals_o_f);
+
+	double x=NAN;
 
 	return 0;
 }

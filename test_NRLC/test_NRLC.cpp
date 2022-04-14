@@ -11,8 +11,6 @@ typedef pcl::PointXYZ PointT;
 
 int main()
 {
-
-    pcl::PointCloud<PointT>::Ptr cloud (new pcl::PointCloud<PointT>);
     pcl::PointCloud<PointT>::Ptr cloud_filtered (new pcl::PointCloud<PointT>);
     pcl::PointCloud<pcl::Normal>::Ptr normals (new pcl::PointCloud<pcl::Normal>);
 
@@ -49,38 +47,38 @@ int main()
 	pcl::PointCloud<pcl::PointXYZRGB>::Ptr visual_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
 	for (size_t i = 0; i < cloud_filtered->size(); i++)
 	{
-        std::cout<<vec_n_feature[i]<<std::endl;
-		// pcl::PointXYZRGB point;
-		// point.x = cloud->points[i].x;
-		// point.y = cloud->points[i].y;
-		// point.z = cloud->points[i].z;
-		// if (vec_n_feature[i] == 1) // convex
-		// {
-		// 	point.r = 0;
-		// 	point.g = 0;
-		// 	point.b = 255;
-		// 	visual_cloud->push_back(point);
-		// }o 99  9
-		// else if (vec_n_feature[i] == 2) // concave
-		// {
-		// 	point.r = 255;
-		// 	point.g = 0;
-		// 	point.b = 0;
-		// 	visual_cloud->push_back(point);
-		// }
-		// else if (vec_n_feature[i] == 3) // border
-		// {
-		// 	point.r = 0;
-		// 	point.g = 255;
-		// 	point.b = 0;
-		// 	visual_cloud->push_back(point);
-		// }
-		// else if (vec_n_feature[i] == 0) // nonfeature
-		// {
-		// 	point.r = 150;
-		// 	point.g = 150;
-		// 	point.b = 150;
-		// }
+        // std::cout<<vec_n_feature[i]<<std::endl;
+		pcl::PointXYZRGB point;
+		point.x = cloud_filtered->points[i].x;
+		point.y = cloud_filtered->points[i].y;
+		point.z = cloud_filtered->points[i].z;
+		if (vec_n_feature[i] == 1) // convex
+		{
+			point.r = 0;
+			point.g = 0;
+			point.b = 255;
+			visual_cloud->push_back(point);
+		}
+		else if (vec_n_feature[i] == 2) // concave
+		{
+			point.r = 255;
+			point.g = 0;
+			point.b = 0;
+			visual_cloud->push_back(point);
+		}
+		else if (vec_n_feature[i] == 3) // border
+		{
+			point.r = 0;
+			point.g = 255;
+			point.b = 0;
+			visual_cloud->push_back(point);
+		}
+		else if (vec_n_feature[i] == 0) // nonfeature
+		{
+			point.r = 150;
+			point.g = 150;
+			point.b = 150;
+		}
 	}
 	pcl::io::savePCDFile("nrlc_test_out.pcd", *visual_cloud);
 	cout << "save finish" << endl;

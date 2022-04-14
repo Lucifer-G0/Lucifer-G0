@@ -14,7 +14,7 @@ pcl::PointCloud<pcl::Normal>::Ptr orgnized_normal_estimation (pcl::PointCloud<pc
     pcl::PointCloud<pcl::Normal>::Ptr normals (new pcl::PointCloud<pcl::Normal>);
 
     pcl::IntegralImageNormalEstimation<pcl::PointXYZ, pcl::Normal> ne;
-    ne.setNormalEstimationMethod (ne.AVERAGE_3D_GRADIENT);
+    ne.setNormalEstimationMethod (ne.COVARIANCE_MATRIX);
     ne.setMaxDepthChangeFactor(0.02f);
     ne.setNormalSmoothingSize(10.0f);
     ne.setInputCloud(cloud);
@@ -65,7 +65,8 @@ pcl::PointCloud<pcl::Normal>::Ptr fast_normal_estimation( pcl::PointCloud<pcl::P
 	 */
 	ne.setViewPoint(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
 
-	ne.setRadiusSearch(0.03);
+	// ne.setRadiusSearch(0.03);
+	ne.setKSearch(10);
 	
 	if (test)
 	{
