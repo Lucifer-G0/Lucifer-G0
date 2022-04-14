@@ -21,25 +21,13 @@ int main()
 	pcl::io::loadPCDFile("00000_cloud_fnormals.pcd", *normals);
 	std::cout << normals->size() << std::endl;
 
-    // // passthrough filter, remove 0
-    // pcl::PassThrough<PointT> pass;
-    // pass.setInputCloud (cloud);
-    // pass.setFilterFieldName ("z");
-    // pass.setFilterLimits (1, 50);   // test pcd: Most points range from 7 to 30.
-    // pass.filter (*cloud_filtered);
-
-    // pcl::io::savePCDFile("cloud_filtered.pcd", *cloud_filtered);
-	// cout << "save finish" << endl;
-
-    // normals=fast_normal_estimation(cloud_filtered,"00");
 
     NRLC nrlc;
 	nrlc.setInputCloud(cloud_filtered);
 	nrlc.setNormals(normals);
-	nrlc.setParams(40, 60, 0.7, 0.7);
+	nrlc.setParams(40, 60, 0.7, 0.85);
 	std::vector<int> vec_n_feature;
 	nrlc.detect(vec_n_feature);
-    std::cout<<"vec_n_feature has "<<vec_n_feature.size()<<std::endl;
 	// nrlc.EDE(vec_n_feature, 4, 1, 1);
 	// nrlc.refine(3, vec_n_feature);
  
@@ -92,4 +80,19 @@ int main()
 		pcl_sleep(0.01);
 	}
 
+}
+
+void store()
+{
+	  // // passthrough filter, remove 0
+    // pcl::PassThrough<PointT> pass;
+    // pass.setInputCloud (cloud);
+    // pass.setFilterFieldName ("z");
+    // pass.setFilterLimits (1, 50);   // test pcd: Most points range from 7 to 30.
+    // pass.filter (*cloud_filtered);
+
+    // pcl::io::savePCDFile("cloud_filtered.pcd", *cloud_filtered);
+	// cout << "save finish" << endl;
+
+    // normals=fast_normal_estimation(cloud_filtered,"00");
 }
