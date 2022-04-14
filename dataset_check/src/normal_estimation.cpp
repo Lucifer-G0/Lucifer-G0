@@ -26,8 +26,8 @@ pcl::PointCloud<pcl::Normal>::Ptr orgnized_normal_estimation (pcl::PointCloud<pc
 		ne.compute(*normals);
 		std::cout << "orgnized normal estimation cost: " << tt.toc() << "ms" << std::endl << std::endl;
 		// save normals to pcd
-		pcl::io::savePCDFile("res/"+name+".pcd", *normals);
-		std::cout << "save normals to "<<name<<".pcd finish" << std::endl << std::endl;
+		pcl::io::savePCDFile(name+"_onormals.pcd", *normals);
+		std::cout << "save normals to "<<name<<"_onormals.pcd finish" << std::endl << std::endl;
 	}
 	else
 	{
@@ -74,8 +74,8 @@ pcl::PointCloud<pcl::Normal>::Ptr fast_normal_estimation( pcl::PointCloud<pcl::P
 		ne.compute(*normals);
 		std::cout << "fast normal estimation cost: " << tt.toc() << "ms" << std::endl;
 		//save normals to pcd 
-		pcl::io::savePCDFile(name+".pcd", *normals);
-		cout << "save normals to "<<name<<".pcd finish" << endl<<endl;
+		pcl::io::savePCDFile(name+"_fnormals.pcd", *normals);
+		cout << "save normals to "<<name<<"_fnormals.pcd finish" << endl<<endl;
 	}
 	else
 	{

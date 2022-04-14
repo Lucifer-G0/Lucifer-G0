@@ -6,6 +6,8 @@
 #include <pcl/point_types.h>
 #include <pcl/console/time.h>
 #include <pcl/visualization/pcl_visualizer.h>
+#include <pcl/filters/passthrough.h>
+#include <pcl/filters/extract_indices.h>
 
 #include "normal_estimation.h"
 #include "transform.h"
@@ -16,28 +18,50 @@ void cloud_show(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
 
 int main(int argc, char *argv[])
 {
-	std::string imgs_path="../imgs";
-	std::vector<cv::String> img;
-	cv::glob(imgs_path, img, true);
-	int img_num=img.size();
-	std::cout<<img_num<<std::endl;
-	pcl::console::TicToc tt;
-	pcl::console::TicToc tt2;
-	tt.tic();
-	tt2.tic();
-	int j=0;
-	for(int i=0;i<img_num;i++)
-	{
-		std::string filename=img[i];
-		depth2cloud(filename,true);
-		if(++j % 100 == 0)
-		{
-			std::cout<<"transfer 100 depth png to pcd cost:"<<tt2.toc()<<" ms."<<std::endl;
-			tt2.tic();
-		}
-		
-	}
-	std::cout<<"transfer "<<img_num<<"depth png to pcd cost:"<<tt.toc()<<" ms."<<std::endl;
+		// load point cloud
+	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+	pcl::PointCloud<pcl::PointXYZ>::Ptr filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+	pcl::PointCloud<pcl::Normal>::Ptr cloud_normals_f (new pcl::PointCloud<pcl::Normal>);
+	pcl::PointCloud<pcl::Normal>::Ptr cloud_normals_o (new pcl::PointCloud<pcl::Normal>);
+	pcl::PointCloud<pcl::Normal>::Ptr cloud_normals_f_f (new pcl::PointCloud<pcl::Normal>);
+	pcl::PointCloud<pcl::Normal>::Ptr cloud_normals_o_f (new pcl::PointCloud<pcl::Normal>);
+	pcl::ExtractIndices<pcl::Normal> extract_normals_f;
+	pcl::ExtractIndices<pcl::Normal> extract_normals_o;
+
+	pcl::io::loadPCDFile("../res/00000_cloud.pcd", *cloud);
+	std::cout << cloud->size() << std::endl;
+
+	pcl::io::loadPCDFile("raw_fnormals.pcd", *cloud_normals_f);
+	pcl::io::loadPCDFile("raw_onormals.pcd", *cloud_normals_o);
+	
+	std::cout<<"cloud_normals_f has "<<cloud_normals_f->size()<<std::endl;
+	std::cout<<"cloud_normals_o has "<<cloud_normals_o->size()<<std::endl;
+	// passthrough filter, remove 0
+    pcl::PassThrough<pcl::PointXYZ> pass(true);
+    pass.setInputCloud (cloud);
+    pass.setFilterFieldName ("z");
+    pass.setFilterLimits (1, 50);   // test pcd: Most points range from 7 to 30.
+    pass.filter (*filtered_cloud);
+	pcl::IndicesConstPtr inliers = pass.getRemovedIndices();
+	std::cout<<"inliers has "<<inliers->size()<<std::endl;
+
+    pcl::io::savePCDFile("filtered_cloud.pcd", *filtered_cloud);
+	cout << "save filtered_cloud.pcd finish" << endl;
+
+    fast_normal_estimation(filtered_cloud,true,"filtered_cloud");
+
+	extract_normals_f.setNegative (true);
+  	extract_normals_f.setInputCloud (cloud_normals_f);
+  	extract_normals_f.setIndices (inliers);
+  	extract_normals_f.filter (*cloud_normals_f_f);
+
+	extract_normals_o.setNegative (true);
+  	extract_normals_o.setInputCloud (cloud_normals_o);
+  	extract_normals_o.setIndices (inliers);
+  	extract_normals_o.filter (*cloud_normals_o_f);
+
+	pcl::io::savePCDFile("filtered_raw_fnormals.pcd", *cloud_normals_f_f);
+	pcl::io::savePCDFile("filtered_raw_onormals.pcd", *cloud_normals_o_f);
 
 	return 0;
 }
@@ -48,6 +72,30 @@ int main(int argc, char *argv[])
 
 void store_useful_sentence()
 {
+	// std::string imgs_path="../imgs";
+	// std::vector<cv::String> img;
+	// cv::glob(imgs_path, img, true);
+	// int img_num=img.size();
+	// std::cout<<img_num<<std::endl;
+	// pcl::console::TicToc tt;
+	// pcl::console::TicToc tt2;
+	// tt.tic();
+	// tt2.tic();
+	// int j=0;
+	// for(int i=0;i<img_num;i++)
+	// {
+	// 	std::string filename=img[i];
+	// 	depth2cloud(filename,true);
+	// 	if(++j % 100 == 0)
+	// 	{
+	// 		std::cout<<"transfer 100 depth png to pcd cost:"<<tt2.toc()<<" ms."<<std::endl;
+	// 		tt2.tic();
+	// 	}
+		
+	// }
+	// std::cout<<"transfer "<<img_num<<"depth png to pcd cost:"<<tt.toc()<<" ms."<<std::endl;
+
+
 	// 	// load point cloud
 	// pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
 	// pcl::io::loadPCDFile("object.pcd", *cloud);
