@@ -46,7 +46,7 @@ int main(int argc, char **argv)
     cloud_filtered = passthrough_filter(cloud);
     normals = fast_normal_estimation(cloud_filtered);
     //------------------NRLC detect--------------------------------------------------
-    cloud_feature = NRLC_Detect(cloud_filtered, normals);
+    cloud_feature = NRLC_Detect(cloud_filtered, normals,true);
     //------------------stastic removal(移除部分数据异常导致的边界)-------------------------
     cloud_sor = statisc_removal(cloud_feature);
     //------------------Euclidean Cluster Extract----------------------------------------
