@@ -7,13 +7,65 @@
 typedef pcl::PointXYZ PointT;
 typedef pcl::PointCloud<PointT> PointCloudT;
 
+
+
+#include <iostream>
+#include <pcl/point_types.h>
+#include <pcl/filters/statistical_outlier_removal.h>
+
+int main1 ()
+{
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered (new pcl::PointCloud<pcl::PointXYZ>);
+
+  // Fill in the cloud data
+  pcl::PCDReader reader;
+  // Replace the path below with the path where you saved your file
+  reader.read<pcl::PointXYZ> ("nrlc_test_out_max_40_000_1.pcd", *cloud);
+
+  std::cerr << "Cloud before filtering: " << std::endl;
+  std::cerr << *cloud << std::endl;
+
+  // Create the filtering object
+  pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+  sor.setInputCloud (cloud);
+  sor.setMeanK (50);
+  sor.setStddevMulThresh (1.0);
+  sor.filter (*cloud_filtered);
+
+  std::cerr << "Cloud after filtering: " << std::endl;
+  std::cerr << *cloud_filtered << std::endl;
+
+  pcl::PCDWriter writer;
+  writer.write<pcl::PointXYZ> ("inliers.pcd", *cloud_filtered, false);
+
+  sor.setNegative (true);
+  sor.filter (*cloud_filtered);
+  writer.write<pcl::PointXYZ> ("outliers.pcd", *cloud_filtered, false);
+
+  return (0);
+}
+
+
+
+
+
+
+
+
+
+
+
 int main(int argc, char **argv)
 {
     PointCloudT::Ptr cloud(new PointCloudT);
     pcl::PCDWriter writer;
-    std::string no=argv[1];
-    std::string image_path = "../imgs/000"+no+"-color.png";
-    std::string pcd_path = "../cloud/000"+no+"_cloud_blue.pcd";
+    // std::string no=argv[1];
+    // std::string image_path = "../imgs/000"+no+"-color.png";
+    // std::string pcd_path = "../cloud/000"+no+"_cloud_blue.pcd";
+    
+    std::string image_path = "../00000-color.png";
+    std::string pcd_path = "inliers.pcd";
 
     // load cloud from pcd file
     pcl::console::print_highlight("Loading point cloud...\n");
@@ -30,9 +82,9 @@ int main(int argc, char **argv)
     std::cout << "border_points has " << cloud->size() << " points" << std::endl;
     std::vector<pcl::PointIndices> cluster_indices;
     pcl::EuclideanClusterExtraction<PointT> ec;
-    ec.setClusterTolerance(0.2);
-    ec.setMinClusterSize(200);
-    ec.setMaxClusterSize(100000);
+    ec.setClusterTolerance(0.5);
+    ec.setMinClusterSize(100);
+    ec.setMaxClusterSize(1000000);
     ec.setSearchMethod(tree);
     ec.setInputCloud(cloud);
     ec.extract(cluster_indices);

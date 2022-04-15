@@ -25,11 +25,11 @@ int main()
     NRLC nrlc;
 	nrlc.setInputCloud(cloud_filtered);
 	nrlc.setNormals(normals);
-	nrlc.setParams(40, 60, 0.7, 0.85);
+	nrlc.setParams(100, 60, 0.6, 0.5);
 	std::vector<int> vec_n_feature;
 	nrlc.detect(vec_n_feature);
-	// nrlc.EDE(vec_n_feature, 4, 1, 1);
-	// nrlc.refine(3, vec_n_feature);
+	nrlc.EDE(vec_n_feature, 10, 3, 1);
+	nrlc.refine(3, vec_n_feature);
  
 	// visualization
 	pcl::PointCloud<pcl::PointXYZRGB>::Ptr visual_cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
@@ -55,6 +55,7 @@ int main()
 			visual_cloud->push_back(point);
 		}
 		else if (vec_n_feature[i] == 3) // border
+		// if (vec_n_feature[i] == 3) // border
 		{
 			point.r = 0;
 			point.g = 255;
@@ -68,7 +69,7 @@ int main()
 			point.b = 150;
 		}
 	}
-	pcl::io::savePCDFile("nrlc_test_out.pcd", *visual_cloud);
+	pcl::io::savePCDFile("nrlc_test_out_max_40_000.pcd", *visual_cloud);
 	cout << "save finish" << endl;
 
 	pcl::visualization::PCLVisualizer visualizer("show result");

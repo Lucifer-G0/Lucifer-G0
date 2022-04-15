@@ -8,16 +8,17 @@
 #include <pcl/search/kdtree.h>
 #include <pcl/features/normal_3d_omp.h>
 
-    
+
+//也可以设置KSearch? seem to be useless
 pcl::PointCloud<pcl::Normal>::Ptr orgnized_normal_estimation (pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,bool test,std::string name)
 {
     pcl::PointCloud<pcl::Normal>::Ptr normals (new pcl::PointCloud<pcl::Normal>);
 
     pcl::IntegralImageNormalEstimation<pcl::PointXYZ, pcl::Normal> ne;
     ne.setNormalEstimationMethod (ne.COVARIANCE_MATRIX);
-    ne.setMaxDepthChangeFactor(0.02f);
-    ne.setNormalSmoothingSize(10.0f);
+	ne.setKSearch(10);//seem to be useless
     ne.setInputCloud(cloud);
+	
 
 	if (test)
 	{
@@ -63,10 +64,11 @@ pcl::PointCloud<pcl::Normal>::Ptr fast_normal_estimation( pcl::PointCloud<pcl::P
 	 * NOTE: setting viewpoint is very important, so that we can ensure
 	 * normals are all pointed in the same direction!
 	 */
-	ne.setViewPoint(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+	// ne.setViewPoint(std::numeric_limits<float>::max(), std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+	ne.setViewPoint(0,0,0);
 
 	// ne.setRadiusSearch(0.03);
-	ne.setKSearch(10);
+	ne.setKSearch(40);
 	
 	if (test)
 	{

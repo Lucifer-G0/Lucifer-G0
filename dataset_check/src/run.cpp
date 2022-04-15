@@ -28,7 +28,7 @@ int main(int argc, char *argv[])
 	pcl::io::loadPCDFile("../res/00000_cloud.pcd", *cloud);
 	std::cout << cloud->size() << std::endl;
 
-	cloud_normals_f=fast_normal_estimation(cloud,true,"raw");
+	cloud_normals_f=fast_normal_estimation(cloud,true,"raw_40");
 
 	std::cout<<"cloud_normals_f has "<<cloud_normals_f->size()<<std::endl;
 
@@ -44,7 +44,7 @@ int main(int argc, char *argv[])
     // pcl::io::savePCDFile("filtered_cloud.pcd", *filtered_cloud);
 	// cout << "save filtered_cloud.pcd finish" << endl;
 
-    fast_normal_estimation(filtered_cloud,true,"filtered_cloud");
+    fast_normal_estimation(filtered_cloud,true,"filtered_cloud_40");
 
 	extract_normals_f.setNegative (true);
   	extract_normals_f.setInputCloud (cloud_normals_f);
@@ -52,9 +52,8 @@ int main(int argc, char *argv[])
   	extract_normals_f.filter (*cloud_normals_f_f);
 
 
-	pcl::io::savePCDFile("filtered_raw_fnormals.pcd", *cloud_normals_f_f);
+	pcl::io::savePCDFile("filtered_raw_40_fnormals.pcd", *cloud_normals_f_f);
 
-	double x=NAN;
 
 	return 0;
 }
