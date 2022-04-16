@@ -4,8 +4,9 @@
 #include <pcl/point_types.h>
 #include <pcl/filters/statistical_outlier_removal.h>
 #include <pcl/segmentation/extract_clusters.h> // Euclidean Cluster Extract
+#include <pcl/console/time.h>
 
-#include "NRLC.hpp"
+#include "NRLC.h"
 #include "normal_estimation.h"
 #include "transform.h"
 #include "ObjectWindow.h"
@@ -29,7 +30,7 @@ int main(int argc, char **argv)
     PointCloudNPtr normals(new PointCloudN);
 
     cv::Mat image;
-
+    
     std::string image_path = "../images/00000-color.png";
     std::string raw_pcd_path = "../raw_pcd/00000_cloud.pcd";
 
@@ -46,12 +47,15 @@ int main(int argc, char **argv)
     cloud_filtered = passthrough_filter(cloud);
     normals = fast_normal_estimation(cloud_filtered);
     //------------------NRLC detect--------------------------------------------------
-    cloud_feature = NRLC_Detect(cloud_filtered, normals,true);
+    pcl::console::TicToc tt;
+    tt.tic();
+    cloud_feature = NRLC_Detect(cloud_filtered, normals);
+    std::cout<<"time spend "<<tt.toc()<<std::endl;
     //------------------stastic removal(移除部分数据异常导致的边界)-------------------------
     cloud_sor = statisc_removal(cloud_feature);
     //------------------Euclidean Cluster Extract----------------------------------------
     image = cluster_extract(image, cloud_sor);
-
+    
     cv::imshow("return test", image);
     cv::waitKey();
     return 0;
@@ -176,6 +180,8 @@ PointCloudTPtr NRLC_Detect(PointCloudTPtr cloud_filtered, PointCloudNPtr normals
     nrlc.refine(3, vec_n_feature);
 
     PointCloudTPtr feature_cloud(new PointCloudT);
+#pragma omp parallel
+#pragma omp for
     for (size_t i = 0; i < cloud_filtered->size(); i++)
     {
         PointT point;
