@@ -20,7 +20,7 @@ cv::Mat depth_to_uint8(cv::Mat depth);
 
 int main()
 {
-	float back_threshold_percent = 0.9f; //用于计算背景的深度阈值，百分比形式。0.9比较合适？
+	float back_threshold_percent = 0.85f; //用于计算背景的深度阈值，百分比形式。0.85比较合适？
 	float back_threshold = 0.0f;
 	float max_depth = 50.0f;
 
