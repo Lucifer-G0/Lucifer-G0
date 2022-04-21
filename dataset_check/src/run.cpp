@@ -18,41 +18,9 @@ void cloud_show(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud);
 
 int main(int argc, char *argv[])
 {
-		// load point cloud
-	pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
-	pcl::PointCloud<pcl::PointXYZ>::Ptr filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>);
-	pcl::PointCloud<pcl::Normal>::Ptr cloud_normals_f (new pcl::PointCloud<pcl::Normal>);
-	pcl::PointCloud<pcl::Normal>::Ptr cloud_normals_f_f (new pcl::PointCloud<pcl::Normal>);
-	pcl::ExtractIndices<pcl::Normal> extract_normals_f;
 
-	pcl::io::loadPCDFile("../res/00000_cloud.pcd", *cloud);
-	std::cout << cloud->size() << std::endl;
-
-	cloud_normals_f=fast_normal_estimation(cloud,true,"raw_40");
-
-	std::cout<<"cloud_normals_f has "<<cloud_normals_f->size()<<std::endl;
-
-	// passthrough filter, remove 0
-    pcl::PassThrough<pcl::PointXYZ> pass(true);
-    pass.setInputCloud (cloud);
-    pass.setFilterFieldName ("z");
-    pass.setFilterLimits (1, 50);   // test pcd: Most points range from 7 to 30.
-    pass.filter (*filtered_cloud);
-	pcl::IndicesConstPtr inliers = pass.getRemovedIndices();
-	std::cout<<"inliers has "<<inliers->size()<<std::endl;
-
-    // pcl::io::savePCDFile("filtered_cloud.pcd", *filtered_cloud);
-	// cout << "save filtered_cloud.pcd finish" << endl;
-
-    fast_normal_estimation(filtered_cloud,true,"filtered_cloud_40");
-
-	extract_normals_f.setNegative (true);
-  	extract_normals_f.setInputCloud (cloud_normals_f);
-  	extract_normals_f.setIndices (inliers);
-  	extract_normals_f.filter (*cloud_normals_f_f);
-
-
-	pcl::io::savePCDFile("filtered_raw_40_fnormals.pcd", *cloud_normals_f_f);
+	depth2cloud("../JBF_fixed_depth.png",true);
+	
 
 
 	return 0;
@@ -64,6 +32,42 @@ int main(int argc, char *argv[])
 
 void store_useful_sentence()
 {
+	// 	// load point cloud
+	// pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
+	// pcl::PointCloud<pcl::PointXYZ>::Ptr filtered_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+	// pcl::PointCloud<pcl::Normal>::Ptr cloud_normals_f (new pcl::PointCloud<pcl::Normal>);
+	// pcl::PointCloud<pcl::Normal>::Ptr cloud_normals_f_f (new pcl::PointCloud<pcl::Normal>);
+	// pcl::ExtractIndices<pcl::Normal> extract_normals_f;
+
+	// pcl::io::loadPCDFile("../res/00000_cloud.pcd", *cloud);
+	// std::cout << cloud->size() << std::endl;
+
+	// cloud_normals_f=fast_normal_estimation(cloud,true,"raw_40");
+
+	// std::cout<<"cloud_normals_f has "<<cloud_normals_f->size()<<std::endl;
+
+	// // passthrough filter, remove 0
+    // pcl::PassThrough<pcl::PointXYZ> pass(true);
+    // pass.setInputCloud (cloud);
+    // pass.setFilterFieldName ("z");
+    // pass.setFilterLimits (1, 50);   // test pcd: Most points range from 7 to 30.
+    // pass.filter (*filtered_cloud);
+	// pcl::IndicesConstPtr inliers = pass.getRemovedIndices();
+	// std::cout<<"inliers has "<<inliers->size()<<std::endl;
+
+    // // pcl::io::savePCDFile("filtered_cloud.pcd", *filtered_cloud);
+	// // cout << "save filtered_cloud.pcd finish" << endl;
+
+    // fast_normal_estimation(filtered_cloud,true,"filtered_cloud_40");
+
+	// extract_normals_f.setNegative (true);
+  	// extract_normals_f.setInputCloud (cloud_normals_f);
+  	// extract_normals_f.setIndices (inliers);
+  	// extract_normals_f.filter (*cloud_normals_f_f);
+	// pcl::io::savePCDFile("filtered_raw_40_fnormals.pcd", *cloud_normals_f_f);
+
+	//--------------------------------------------------------------------------------------
+
 	// std::string imgs_path="../imgs";
 	// std::vector<cv::String> img;
 	// cv::glob(imgs_path, img, true);

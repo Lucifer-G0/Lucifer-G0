@@ -15,10 +15,11 @@ typedef pcl::PointXYZ PointT;
 
 using namespace cv;
 
+
 pcl::PointCloud<PointT>::Ptr depth2cloud(std::string filename, bool test)
 {
 	pcl::console::TicToc tt;
-	Mat Depth = cv::imread(filename, -1);
+	Mat Depth = cv::imread(filename, 2);
 	int imw = Depth.cols, imh = Depth.rows;
 	int channels = Depth.channels();
 
@@ -99,9 +100,13 @@ pcl::PointCloud<PointT>::Ptr depth2cloud(std::string filename, bool test)
 		// std::cout << "cloud size after reset w and h: " << cloud->size() << std::endl;
 		// std::cout << "cloud orgnized after  reset w and h: " << cloud->isOrganized() << std::endl << std::endl;
 		
+		// //remove suffix ".png"
+		// int start=filename.rfind("scene") , end= filename.rfind("-depth") ;
+		// std::string purename = filename.substr(start, end-start);
+
 		//remove suffix ".png"
-		int start=filename.rfind("scene") , end= filename.rfind("-depth") ;
-		std::string purename = filename.substr(start, end-start);
+		int end= filename.rfind(".png") ;
+		std::string purename = filename.substr(0, end);
 
 		//save cloud to pcd
 		pcl::io::savePCDFile("../pcd/"+purename +"_cloud.pcd", *cloud);
@@ -111,6 +116,8 @@ pcl::PointCloud<PointT>::Ptr depth2cloud(std::string filename, bool test)
 
 	return cloud;
 }
+
+
 
 pcl::PointCloud<PointT>::Ptr passthrough_filter(pcl::PointCloud<PointT>::Ptr cloud, bool test)
 {

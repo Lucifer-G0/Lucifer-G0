@@ -6,11 +6,11 @@
 
 /*
 	@brief  transform from a depth png to cloud : recommend use
-	@param filename:	the path or name of depth pnd file, use for imread(filename,-1)
+	@param depth_path:	the path or name of depth png file, use for imread(filename,-1)
 	@param test:	if you need save cloud to pcd and output some info (usually use for test,save name:filename_cloud.pcd)
 	@return cloud ptr
 */
-pcl::PointCloud<pcl::PointXYZ>::Ptr depth2cloud(std::string filename, bool test=false);
+pcl::PointCloud<pcl::PointXYZ>::Ptr depth2cloud(std::string depth_path, bool test=false);
 
 /*
 	@brief 直通滤波器，过滤掉数据缺失导致的深度为0的数据。

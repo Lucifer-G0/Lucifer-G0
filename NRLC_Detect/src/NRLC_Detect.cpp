@@ -30,26 +30,31 @@ int main(int argc, char **argv)
     PointCloudNPtr normals(new PointCloudN);
 
     cv::Mat image;
-    
-    std::string image_path = "../images/00000-color.png";
-    std::string raw_pcd_path = "../raw_pcd/00000_cloud.pcd";
+    std::string depth_name = "101.png";
+    std::string image_name = "101.jpg";
+
+    std::string depth_path = "../depth/"+depth_name;
+    std::string image_path = "../images/"+image_name;
+    // std::string raw_pcd_path = "../raw_pcd/00000_cloud.pcd";  
+    //------------------transfer depth to pcd -----------------------------------
+    cloud=depth2cloud(depth_path,true);
 
     //------------------load raw cloud pcd--------------------------------------------
     image = cv::imread(image_path, 1);
 
-    pcl::console::print_highlight("Loading point cloud...\n");
-    if (pcl::io::loadPCDFile<PointT>(raw_pcd_path, *cloud))
-    {
-        pcl::console::print_error("Error loading cloud file!\n");
-        return 1;
-    }
+    // pcl::console::print_highlight("Loading point cloud...\n");
+    // if (pcl::io::loadPCDFile<PointT>(raw_pcd_path, *cloud))
+    // {
+    //     pcl::console::print_error("Error loading cloud file!\n");
+    //     return 1;
+    // }
     //------------------fast normal estimation(KSearch)------------------------------
     cloud_filtered = passthrough_filter(cloud);
-    normals = fast_normal_estimation(cloud_filtered);
+    normals = fast_normal_estimation(cloud_filtered,true,"00000");
     //------------------NRLC detect--------------------------------------------------
     pcl::console::TicToc tt;
     tt.tic();
-    cloud_feature = NRLC_Detect(cloud_filtered, normals);
+    cloud_feature = NRLC_Detect(cloud_filtered, normals,true);
     std::cout<<"time spend "<<tt.toc()<<std::endl;
     //------------------stastic removal(移除部分数据异常导致的边界)-------------------------
     cloud_sor = statisc_removal(cloud_feature);
@@ -173,15 +178,14 @@ PointCloudTPtr NRLC_Detect(PointCloudTPtr cloud_filtered, PointCloudNPtr normals
     NRLC nrlc;
     nrlc.setInputCloud(cloud_filtered);
     nrlc.setNormals(normals);
-    nrlc.setParams(100, 60, 0.6, 0.5);
+    nrlc.setParams(40, 60, 0.6, 0.5);
     std::vector<int> vec_n_feature;
     nrlc.detect(vec_n_feature);
     nrlc.EDE(vec_n_feature, 10, 3, 1);
     nrlc.refine(3, vec_n_feature);
 
     PointCloudTPtr feature_cloud(new PointCloudT);
-#pragma omp parallel
-#pragma omp for
+
     for (size_t i = 0; i < cloud_filtered->size(); i++)
     {
         PointT point;
