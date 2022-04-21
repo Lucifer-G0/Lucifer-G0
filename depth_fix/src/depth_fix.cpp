@@ -20,13 +20,16 @@ cv::Mat depth_to_uint8(cv::Mat depth);
 
 int main()
 {
+	float back_threshold_percent = 0.9f; //用于计算背景的深度阈值，百分比形式。0.9比较合适？
+	float back_threshold = 0.0f;
+	float max_depth=50.0f;
+
 	cv::Mat Depth = cv::imread("../scene_01/00000-depth.png", -1);
 	Depth.convertTo(Depth, CV_32F);
 	Fix fix(Depth);
 
 	// All the objects needed
 	pcl::PassThrough<PointT> pass;
-	pcl::PCDWriter writer;
 	pcl::ExtractIndices<PointT> extract;
 	pcl::ExtractIndices<pcl::Normal> extract_normals;
 	pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>());
@@ -37,6 +40,16 @@ int main()
 	pcl::PointCloud<pcl::PointXYZ>::Ptr back_cloud(new pcl::PointCloud<pcl::PointXYZ>);
 
 	cloud = depth2cloud("../scene_01/00000-depth.png");
+	
+    //--------------计算背景的深度阈值----------------------
+    std::vector<float> sorted_Depth;
+	for (auto &point : *cloud)
+	{
+		sorted_Depth.push_back(point.z);
+	}
+	std::sort(sorted_Depth.begin(),sorted_Depth.end());
+	back_threshold=sorted_Depth[(int)(sorted_Depth.size()*back_threshold_percent)];	//根据百分比计算得到阈值
+	max_depth=sorted_Depth[sorted_Depth.size()-1]+0.1;	//获得最大值，不清楚过滤的开闭，因而加一点避免最大值被过滤
 
 	//------------------- Create the segmentation object for the planar model and set all the parameters----------------
 	pcl::SACSegmentation<pcl::PointXYZ> seg;
@@ -54,7 +67,7 @@ int main()
 	// Build a passthrough filter to remove spurious NaNs and scene background
 	pass.setInputCloud(cloud);
 	pass.setFilterFieldName("z");
-	pass.setFilterLimits(20, 50);
+	pass.setFilterLimits(back_threshold, max_depth);	//-------阈值到最大值--------------
 	pass.filter(*cloud_backgroud);
 	std::cerr << "PointCloud after filtering has: " << cloud_backgroud->size() << " data points." << std::endl;
 
@@ -95,7 +108,7 @@ int main()
 		std::cout << "PointCloud representing the Cluster: " << cloud_cluster->size() << " data points." << std::endl;
 		std::stringstream ss;
 		ss << "cloud_cluster_" << j << ".pcd";
-		writer.write<pcl::PointXYZ>(ss.str(), *cloud_cluster, false); //*
+		pcl::io::savePCDFile(ss.str(), *cloud_cluster);
 
 		//---- Segment the largest planar component from the remaining cloud---------------
 		seg.setInputCloud(cloud_cluster);
@@ -120,7 +133,6 @@ int main()
 
 	return 0;
 }
-
 
 //将深度图归一化，转化为0-255，方便显示
 cv::Mat depth_to_uint8(cv::Mat depth)
@@ -148,4 +160,17 @@ cv::Mat depth_to_uint8(cv::Mat depth)
 	// cv::imshow("fix-depth",Depth);
 	// cv::waitKey();
 	return Depth;
+}
+
+void timecount()
+{
+	// 记录起始的时钟周期数
+    double time = (double)cv::getTickCount();
+
+
+	// 计算时间差
+    time = ((double)cv::getTickCount() - time) / cv::getTickFrequency();
+    
+    // 输出运行时间
+    std::cout << "运行时间：" << time << "秒\n";
 }
