@@ -56,7 +56,7 @@ void Fix::back_plane_fix(pcl::PointCloud<PointT>::Ptr cloud_cluster, pcl::PointI
 	C = coefficients->values[2];
 	D = coefficients->values[3];
 
-	std::cout << "Model: " << A << ", " << B << ", " << C << "," << D << std::endl;
+	// std::cout << "Model: " << A << ", " << B << ", " << C << "," << D << std::endl;
 
 	//从聚类中提取出平面上的点,计算窗口
 	for (const auto &idx : inliers->indices)
@@ -66,12 +66,12 @@ void Fix::back_plane_fix(pcl::PointCloud<PointT>::Ptr cloud_cluster, pcl::PointI
 	}
 
 	object_window.update();
-	object_window.output();
-	object_window.draw(Depth);
-	cv::imshow("window", Depth);
-	cv::waitKey();
+	// object_window.output();
+	// object_window.draw(Depth);
+	// cv::imshow("window", Depth);
+	// cv::waitKey();
 	//遍历区域，将所有矩形区域内深度修复,平面方程Ax+By+Cz+D=0->z
-	//行遍历
+	//行遍历,即使并行效率也没有明显提高，该部分应该耗时不大
 	for (int r = object_window.topleft_x; r < object_window.topleft_x + object_window.height; r++)
 	{
 		//列遍历
@@ -94,6 +94,6 @@ void Fix::back_plane_fix(pcl::PointCloud<PointT>::Ptr cloud_cluster, pcl::PointI
 			}
 		}
 	}
-	cv::imshow("fix_depth", Depth);
-	cv::waitKey();
+	// cv::imshow("fix_depth", Depth);
+	// cv::waitKey();
 }

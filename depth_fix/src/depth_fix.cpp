@@ -22,7 +22,7 @@ int main()
 {
 	float back_threshold_percent = 0.9f; //用于计算背景的深度阈值，百分比形式。0.9比较合适？
 	float back_threshold = 0.0f;
-	float max_depth=50.0f;
+	float max_depth = 50.0f;
 
 	cv::Mat Depth = cv::imread("../scene_01/00000-depth.png", -1);
 	Depth.convertTo(Depth, CV_32F);
@@ -40,16 +40,16 @@ int main()
 	pcl::PointCloud<pcl::PointXYZ>::Ptr back_cloud(new pcl::PointCloud<pcl::PointXYZ>);
 
 	cloud = depth2cloud("../scene_01/00000-depth.png");
-	
-    //--------------计算背景的深度阈值----------------------
-    std::vector<float> sorted_Depth;
+
+	//--------------计算背景的深度阈值----------------------
+	std::vector<float> sorted_Depth;
 	for (auto &point : *cloud)
 	{
 		sorted_Depth.push_back(point.z);
 	}
-	std::sort(sorted_Depth.begin(),sorted_Depth.end());
-	back_threshold=sorted_Depth[(int)(sorted_Depth.size()*back_threshold_percent)];	//根据百分比计算得到阈值
-	max_depth=sorted_Depth[sorted_Depth.size()-1]+0.1;	//获得最大值，不清楚过滤的开闭，因而加一点避免最大值被过滤
+	std::sort(sorted_Depth.begin(), sorted_Depth.end());
+	back_threshold = sorted_Depth[(int)(sorted_Depth.size() * back_threshold_percent)]; //根据百分比计算得到阈值
+	max_depth = sorted_Depth[sorted_Depth.size() - 1] + 0.1;							//获得最大值，不清楚过滤的开闭，因而加一点避免最大值被过滤
 
 	//------------------- Create the segmentation object for the planar model and set all the parameters----------------
 	pcl::SACSegmentation<pcl::PointXYZ> seg;
@@ -67,9 +67,9 @@ int main()
 	// Build a passthrough filter to remove spurious NaNs and scene background
 	pass.setInputCloud(cloud);
 	pass.setFilterFieldName("z");
-	pass.setFilterLimits(back_threshold, max_depth);	//-------阈值到最大值--------------
+	pass.setFilterLimits(back_threshold, max_depth); //-------阈值到最大值--------------
 	pass.filter(*cloud_backgroud);
-	std::cerr << "PointCloud after filtering has: " << cloud_backgroud->size() << " data points." << std::endl;
+	
 
 	//----------------------对背景聚类---------------------------------------------------------------
 	tree->setInputCloud(cloud_backgroud);
@@ -83,18 +83,14 @@ int main()
 	ec.setInputCloud(cloud_backgroud);
 	ec.extract(cluster_indices);
 
-	if(cluster_indices.size()==0)
+	if (cluster_indices.size() == 0)
 	{
-		std::cout<<"cluster_indices.size()==0"<<std::endl;
+		std::cout << "cluster_indices.size()==0" << std::endl;
 		return 1;
-	}
-	else
-	{
-		std::cout<<cluster_indices.size()<<std::endl;
 	}
 
 	//--------------------遍历聚类，每个聚类中找出一个平面，并用平面对矩形区域作修复---------------------------------
-	int j = 0;
+	int j = 0; //即使并行效率也没有明显提升
 	for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
 	{
 		pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster(new pcl::PointCloud<pcl::PointXYZ>);
@@ -104,22 +100,11 @@ int main()
 		cloud_cluster->height = 1;
 		cloud_cluster->is_dense = true;
 
-		//----write cluster to pcd --------------
-		std::cout << "PointCloud representing the Cluster: " << cloud_cluster->size() << " data points." << std::endl;
-		std::stringstream ss;
-		ss << "cloud_cluster_" << j << ".pcd";
-		pcl::io::savePCDFile(ss.str(), *cloud_cluster);
-
 		//---- Segment the largest planar component from the remaining cloud---------------
 		seg.setInputCloud(cloud_cluster);
 		seg.segment(*inliers, *coefficients);
-		if (inliers->indices.size() == 0)
-		{
-			std::cout << "Could not estimate a planar model for the given dataset." << std::endl;
-			break;
-		}
 
-		fix.back_plane_fix(cloud_cluster, inliers,coefficients);
+		fix.back_plane_fix(cloud_cluster, inliers, coefficients);
 
 		j++;
 	}
@@ -162,15 +147,22 @@ cv::Mat depth_to_uint8(cv::Mat depth)
 	return Depth;
 }
 
-void timecount()
+void bak_code()
 {
 	// 记录起始的时钟周期数
-    double time = (double)cv::getTickCount();
-
+	double time = (double)cv::getTickCount();
 
 	// 计算时间差
-    time = ((double)cv::getTickCount() - time) / cv::getTickFrequency();
-    
-    // 输出运行时间
-    std::cout << "运行时间：" << time << "秒\n";
+	time = ((double)cv::getTickCount() - time) / cv::getTickFrequency();
+
+	// 输出运行时间
+	std::cout << "运行时间：" << time << "秒\n";
+
+	// std::cerr << "PointCloud after filtering has: " << cloud_backgroud->size() << " data points." << std::endl;
+
+	// //----write cluster to pcd --------------
+	// std::cout << "PointCloud representing the Cluster: " << cloud_cluster->size() << " data points." << std::endl;
+	// std::stringstream ss;
+	// ss << "cloud_cluster_" << j << ".pcd";
+	// pcl::io::savePCDFile(ss.str(), *cloud_cluster);
 }
