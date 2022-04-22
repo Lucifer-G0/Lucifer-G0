@@ -134,7 +134,6 @@ void cloud_show(pcl::PointCloud<pcl::PointXYZ>::Ptr cloud)
 		visualizer.spinOnce(100);
 		pcl_sleep(0.01);
 	}
-	int a; cin >> a;
 }
 
 void normal_show(pcl::PointCloud<pcl::PointXYZ>::Ptr  cloud, pcl::PointCloud<pcl::Normal>::Ptr normals)
