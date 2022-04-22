@@ -15,7 +15,7 @@ Fix::Fix(cv::Mat  _Depth)
 			{
 				_Mask.at<uchar>(r, c) = 1; 
 			}
-			else 
+			else
 			{
 				_Mask.at<uchar>(r, c) = 0; 
 			}
@@ -70,6 +70,7 @@ void Fix::back_plane_fix(pcl::PointCloud<PointT>::Ptr cloud_cluster, pcl::PointI
 	// object_window.draw(Depth);
 	// cv::imshow("window", Depth);
 	// cv::waitKey();
+
 	//遍历区域，将所有矩形区域内深度修复,平面方程Ax+By+Cz+D=0->z
 	//行遍历,即使并行效率也没有明显提高，该部分应该耗时不大
 	for (int r = object_window.topleft_x; r < object_window.topleft_x + object_window.height; r++)
