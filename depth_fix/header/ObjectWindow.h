@@ -19,7 +19,7 @@ public:
     cv::Mat draw(cv::Mat image);
     void add_point(pcl::PointXYZ point);
 private:
-    // set min to MAX so that it will changed immediately when compare
+    // set min to MAX so that it will changed immediately when compare,原本是有正负号的，所以用有正负的float
     float min_x=VTK_FLOAT_MAX, min_y=VTK_FLOAT_MAX, max_x=VTK_FLOAT_MIN, max_y=VTK_FLOAT_MIN;
     float constant = 570.3;
 };

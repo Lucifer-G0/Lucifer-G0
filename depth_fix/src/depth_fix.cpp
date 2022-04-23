@@ -126,18 +126,8 @@ int main()
 	// pcl::io::savePCDFile("fixed_depth_cloud.pcd", *back_fixed_cloud);
 
 	//---------------------------------前景平面修复,需注意前景必须去除零点，因为零点占相当大部分-----------------------------------------------------
-	
 	ForeGround fore(cloud_foreground,fore_seg_threshold_percent);
-
-	// 记录起始的时钟周期数
-	double time = (double)cv::getTickCount();
 	fore.planar_seg();
-	// 计算时间差
-	time = ((double)cv::getTickCount() - time) / cv::getTickFrequency();
-
-	// 输出运行时间
-	std::cout << "运行时间：" << time << "秒\n";
-	
 
 	// pcl::io::savePCDFile("fore_remove_support.pcd", *cloud_filtered);
 
