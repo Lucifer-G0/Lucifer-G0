@@ -2,6 +2,7 @@
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
 #include <pcl/ModelCoefficients.h>
+#include <opencv2/opencv.hpp>
 
 typedef pcl::PointXYZ PointT;
 
@@ -12,6 +13,7 @@ public:
     pcl::PointCloud<PointT>::Ptr cloud_foreground;  //前景点云，随后变成前景点云的剩余点云
     void planar_seg();
     pcl::PointCloud<PointT>::Ptr extract_border(pcl::PointCloud<PointT>::Ptr cloud_cluster,int n=3);
+    std::vector<cv::Point> extract_border_2D(pcl::PointCloud<PointT>::Ptr cloud_cluster,int n=3);
     void planar_repair();
     void object_detect();
 

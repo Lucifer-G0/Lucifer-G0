@@ -233,3 +233,88 @@ pcl::PointCloud<PointT>::Ptr ForeGround::extract_border(pcl::PointCloud<PointT>:
 
     return cloud_border;
 }
+
+/*
+    @param cloud_cluster: 分割出的平面聚类得到的独立平面的内点集合。无组织点云,从有组织一直提取过来的，实际上还是有原序的。
+    @param n:   一个方向上一端提取点的数量
+    @return 二维的边界点，是图像上的点，用于opencv拟合
+*/
+std::vector<cv::Point> ForeGround::extract_border_2D(pcl::PointCloud<PointT>::Ptr cloud_cluster, int n)
+{
+    // 记录起始的时钟周期数
+	double time = (double)cv::getTickCount();
+
+    std::vector<cv::Point> border_points;
+    cv::Mat map = cv::Mat::zeros(480, 640, CV_8U);
+
+    //形成映射图像，便于边界提取
+    for (auto &point : *cloud_cluster)
+    {
+        int r = point.x * constant / point.z; // grid_x = x * constant / depth
+        int c = point.y * constant / point.z;
+        map.at<uchar>(r, c) = 1;
+    }
+
+    std::deque<int> rc_idx_deque;
+    //  横向提取两端边界点
+    for (int r = 0; r < map.rows; r++)
+    {
+        for (int c = 0; c < map.cols; c++)
+        {
+            if (map.at<uchar>(r, c) == 1) //此处有点
+            {
+                rc_idx_deque.push_back(c);
+            }
+        }
+        for (int i = 0; i < n; i++)
+        {
+            if (rc_idx_deque.empty() == false)
+            {
+                int column = rc_idx_deque.front();
+                border_points.push_back(cv::Point(r,column));
+                rc_idx_deque.pop_front();
+            }
+            if (rc_idx_deque.empty() == false)
+            {
+                int column = rc_idx_deque.back();
+                border_points.push_back(cv::Point(r,column));
+                rc_idx_deque.pop_back();
+            }
+        }
+        rc_idx_deque.clear();
+    }
+    //  纵向提取两端边界点
+    for (int c = 0; c < map.cols; c++)
+    {
+        for (int r = 0; r < map.rows; r++)
+        {
+            if (map.at<uchar>(r, c) == 1) //此处有点
+            {
+                rc_idx_deque.push_back(r);
+            }
+        }
+        for (int i = 0; i < n; i++)
+        {
+           if (rc_idx_deque.empty() == false)
+            {
+                int row = rc_idx_deque.front();
+                border_points.push_back(cv::Point(row,c));
+                rc_idx_deque.pop_front();
+            }
+            if (rc_idx_deque.empty() == false)
+            {
+                int row = rc_idx_deque.back();
+                border_points.push_back(cv::Point(row,c));
+                rc_idx_deque.pop_back();
+            }
+        }
+        rc_idx_deque.clear();
+    }
+
+    // 计算时间差
+	time = ((double)cv::getTickCount() - time) / cv::getTickFrequency();
+	// 输出运行时间
+	std::cout << "extract_border 运行时间: " << time << "秒\n";
+
+    return border_points;
+}
