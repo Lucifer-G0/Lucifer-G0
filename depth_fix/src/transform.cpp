@@ -15,6 +15,34 @@ typedef pcl::PointXYZ PointT;
 
 using namespace cv;
 
+//将深度图归一化，转化为0-255，方便显示
+cv::Mat depth_to_uint8(cv::Mat depth)
+{
+	cv::Mat Depth(depth.rows, depth.cols, CV_8U);
+
+	float max = 0;
+	for (int r = 0; r < depth.rows; r++)
+	{
+		//列遍历
+		for (int c = 0; c < depth.cols; c++)
+		{
+			if (depth.at<float>(r, c) > max)
+				max = depth.at<float>(r, c);
+		}
+	}
+	for (int r = 0; r < depth.rows; r++)
+	{
+		//列遍历
+		for (int c = 0; c < depth.cols; c++)
+		{
+			Depth.at<uchar>(r, c) = 255 * (depth.at<float>(r, c) / max);
+		}
+	}
+	// cv::imshow("fix-depth",Depth);
+	// cv::waitKey();
+	return Depth;
+}
+
 pcl::PointCloud<PointT>::Ptr depth2cloud(std::string filename, bool test)
 {
 	pcl::console::TicToc tt;
@@ -40,7 +68,6 @@ pcl::PointCloud<PointT>::Ptr depth2cloud(std::string filename, bool test)
 	// camera parameters
 	float constant = 570.3, MM_PER_M = 1000;
 	int change = constant * MM_PER_M;
-	int center_x = imh / 2, center_y = imw / 2;
 
 	// grid prepare
 	Mat rangeW(1, imw, CV_32F), rangeH(1, imh, CV_32F);
@@ -56,8 +83,8 @@ pcl::PointCloud<PointT>::Ptr depth2cloud(std::string filename, bool test)
 	}
 
 	// x / gridx = depth / constant  �����ʵ��(���)�����������ı� ���� ʵ��������grid����ı�
-	Mat ygrid = Mat::ones(imh, 1, CV_32F) * rangeW - center_y;
-	Mat xgrid = rangeH.t() * Mat::ones(1, imw, CV_32F) - center_x;
+	Mat xgrid = rangeH.t() * Mat::ones(1, imw, CV_32F);
+	Mat ygrid = Mat::ones(imh, 1, CV_32F) * rangeW ;
 
 	Mat X = xgrid.mul(Depth) / change;
 	Mat Y = ygrid.mul(Depth) / change;
@@ -102,6 +129,7 @@ pcl::PointCloud<PointT>::Ptr depth2cloud(std::string filename, bool test)
 
 		// remove suffix ".png"
 		int start = filename.rfind("/"), end = filename.rfind("-depth");
+		start = start==std::string::npos?0:start;
 		std::string purename = filename.substr(start, end - start);
 
 		// //remove suffix ".png"
@@ -117,7 +145,7 @@ pcl::PointCloud<PointT>::Ptr depth2cloud(std::string filename, bool test)
 	return cloud;
 }
 
-pcl::PointCloud<PointT>::Ptr depth2cloud_1(cv::Mat Depth)
+pcl::PointCloud<PointT>::Ptr mat2cloud(cv::Mat Depth)
 {
 	int imw = Depth.cols, imh = Depth.rows;
 	int channels = Depth.channels();
@@ -136,7 +164,6 @@ pcl::PointCloud<PointT>::Ptr depth2cloud_1(cv::Mat Depth)
 	// camera parameters
 	float constant = 570.3, MM_PER_M = 1000;
 	int change = constant * MM_PER_M;
-	int center_x = imh / 2, center_y = imw / 2;
 
 	// grid prepare
 	Mat rangeW(1, imw, CV_32F), rangeH(1, imh, CV_32F);
@@ -152,8 +179,8 @@ pcl::PointCloud<PointT>::Ptr depth2cloud_1(cv::Mat Depth)
 	}
 
 	// x / gridx = depth / constant  �����ʵ��(���)�����������ı� ���� ʵ��������grid����ı�
-	Mat ygrid = Mat::ones(imh, 1, CV_32F) * rangeW - center_y;
-	Mat xgrid = rangeH.t() * Mat::ones(1, imw, CV_32F) - center_x;
+	Mat ygrid = Mat::ones(imh, 1, CV_32F) * rangeW;
+	Mat xgrid = rangeH.t() * Mat::ones(1, imw, CV_32F);
 
 	Mat X = xgrid.mul(Depth) / change;
 	Mat Y = ygrid.mul(Depth) / change;
@@ -305,7 +332,6 @@ MyCloud depth2cloud_2(std::string filename)
 	// camera parameters
 	float constant = 570.3, MM_PER_M = 1000;
 	int change = constant * MM_PER_M;
-	int center_x = 320, center_y = 240;
 
 	// grid prepare
 	Mat rangeW(1, imw, CV_32F), rangeH(1, imh, CV_32F);
@@ -321,8 +347,8 @@ MyCloud depth2cloud_2(std::string filename)
 	}
 
 	// x / gridx = depth / constant  �����ʵ��(���)�����������ı� ���� ʵ��������grid����ı�
-	Mat xgrid = Mat::ones(imh, 1, CV_32F) * rangeW - center_x;
-	Mat ygrid = rangeH.t() * Mat::ones(1, imw, CV_32F) - center_y;
+	Mat xgrid = Mat::ones(imh, 1, CV_32F) * rangeW;
+	Mat ygrid = rangeH.t() * Mat::ones(1, imw, CV_32F);
 
 	Mat X = xgrid.mul(Depth) / change;
 	Mat Y = ygrid.mul(Depth) / change;

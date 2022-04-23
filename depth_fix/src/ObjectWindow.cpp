@@ -40,8 +40,8 @@ cv::Mat ObjectWindow::draw(cv::Mat image)
 void ObjectWindow::add_point(pcl::PointXYZ border_point)
 {
     cv::Point point;                                            //特征点，用以画在图像中
-    point.x = border_point.x * constant / border_point.z + 240; // grid_x = x * constant / depth
-    point.y = border_point.y * constant / border_point.z + 320;
+    point.x = border_point.x * constant / border_point.z; // grid_x = x * constant / depth
+    point.y = border_point.y * constant / border_point.z;
 
     if (point.x < min_x)
     {

@@ -13,7 +13,7 @@ typedef pcl::PointXYZ PointT;
 */
 pcl::PointCloud<PointT>::Ptr depth2cloud(std::string filename, bool test=false);
 
-pcl::PointCloud<PointT>::Ptr depth2cloud_1(cv::Mat Depth);
+pcl::PointCloud<PointT>::Ptr mat2cloud(cv::Mat Depth);
 
 pcl::PointCloud<PointT>::Ptr passthrough_filter(pcl::PointCloud<PointT>::Ptr, bool test = false);
 

@@ -81,13 +81,13 @@ void Fix::back_plane_fix(pcl::PointCloud<PointT>::Ptr cloud_cluster, pcl::PointI
 			if (Mask.at<uchar>(r, c) == 1 && Depth.at<float>(r, c) == 0) //是空洞点
 			{
 				//------------根据模型计算它的值
-				float z = -D * constant * 1000. / (A * (r - 240.) + B * (c - 320.) + C * constant);
+				float z = -D * constant * 1000. / (A *r + B * c+ C * constant);
 				// std::cout<<r<<","<<c<<","<<z<<std::endl;
 				Depth.at<float>(r, c) = z; 
 			}
 			else if(Mask.at<uchar>(r, c) == 1)//已经被填充过的空洞点,优先填充为深的
 			{
-				float z = -D * constant * 1000. / (A * (r - 240.) + B * (c - 320.) + C * constant);
+				float z = -D * constant * 1000. / (A * r+ B * c + C * constant);
 				if(z > Depth.at<float>(r, c))
 				{
 					Depth.at<float>(r, c) = z; 
