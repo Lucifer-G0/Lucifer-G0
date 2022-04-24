@@ -22,7 +22,11 @@ ForeGround::ForeGround(pcl::PointCloud<PointT>::Ptr _cloud_foreground, float for
 }
 
 /*
-    从前景点云中找出达到阈值的若干水平面，存储其点云以及平面系数
+    从前景点云中找出达到阈值的若干水平面，存储其点云以及平面系数,将平面按序号写入seg_image
+    [in] cloud_foreground:从原始点云中按照深度阈值分割出的前景点云
+    [out]  seg_image    将平面序号写入平面内点所属位置
+    [out]  plane_clouds 将各平面内点集写入vector plane_clouds
+    [out]  plane_coes   将各平面系数写入vector plane_coes
 */
 void ForeGround::planar_seg()
 {
@@ -78,9 +82,9 @@ void ForeGround::planar_seg()
             extract.filter(*cloud_plane);
             std::cout << "PointCloud representing the planar component: " << cloud_plane->size() << " data points." << std::endl;
 
-            std::stringstream ss0;
-            ss0 << "cloud_plane_" << i << ".pcd";
-            pcl::io::savePCDFile(ss0.str(), *cloud_plane);
+            // std::stringstream ss0;
+            // ss0 << "cloud_plane_" << i << ".pcd";
+            // pcl::io::savePCDFile(ss0.str(), *cloud_plane);
 
             //---------Remove the planar inliers, extract the rest----------
             extract.setNegative(true);
@@ -92,7 +96,7 @@ void ForeGround::planar_seg()
             std::vector<pcl::PointIndices> cluster_indices;
             pcl::EuclideanClusterExtraction<PointT> ec;
             ec.setClusterTolerance(0.3); //目的是分割不靠近的同层平面，可以适当放宽---------------------------------此参数可能仍有待调整
-            ec.setMinClusterSize(3);     //如果限制该约束，较小的聚类会自动并入大的里面，追求的效果是将其返还
+            ec.setMinClusterSize(30);    //如果限制该约束，较小的聚类会自动并入大的里面，追求的效果是将其返还
             tree->setInputCloud(cloud_plane);
             ec.setSearchMethod(tree);
             ec.setMaxClusterSize(cloud_plane->size() + 1);
@@ -120,12 +124,22 @@ void ForeGround::planar_seg()
                     cloud_cluster->width = cloud_cluster->size();
                     cloud_cluster->height = 1;
                     cloud_cluster->is_dense = true;
-                    std::stringstream ss;
-                    ss << "cloud_cluster_" << i << "_" << j << ".pcd";
-                    pcl::io::savePCDFile(ss.str(), *cloud_cluster);
+                    // std::stringstream ss;
+                    // ss << "cloud_cluster_" << i << "_" << j << ".pcd";
+                    // pcl::io::savePCDFile(ss.str(), *cloud_cluster);
                     // std::stringstream ss1;
-                    // ss1 << "cloud_border_" << j << ".pcd";
+                    // ss1 << "cloud_border_" << i << "_"<< j << ".pcd";
                     // pcl::io::savePCDFile(ss1.str(), *extract_border(cloud_cluster));
+
+                    //遍历
+                    for (auto &point : *cloud_cluster)
+                    {
+                        int r = point.x * constant / point.z; // grid_x = x * constant / depth
+                        int c = point.y * constant / point.z;
+                        seg_image.at<uchar>(r, c) = hp_no;
+                    }
+                    //一个物体处理结束,序号加一
+                    hp_no++;
 
                     plane_clouds.push_back(*cloud_cluster);
                     plane_coes.push_back(*coefficients);
@@ -352,7 +366,7 @@ void ForeGround::object_detect_2D()
 
     std::vector<pcl::PointIndices> cluster_indices;
     pcl::EuclideanClusterExtraction<PointT> ec;
-    ec.setClusterTolerance(0.05); //物体距离聚类，阈值应当适当小一些，独立部分较小会自动归属于附近类
+    ec.setClusterTolerance(0.1); //物体距离聚类，阈值应当适当小一些，独立部分较小会自动归属于附近类
     ec.setMinClusterSize(30);
     ec.setMaxClusterSize(20000);
     ec.setSearchMethod(tree);
@@ -365,16 +379,21 @@ void ForeGround::object_detect_2D()
     }
 
     //-------------step2:对不同聚类结果分别赋予不同的序列号(根据object_no)----------------
+    int object_num = 0;
     //遍历聚类
     for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
     {
         pcl::PointCloud<PointT>::Ptr cloud_cluster(new pcl::PointCloud<PointT>);
-        //-------------------------------------------此处可以直接改为赋值，不提取点云
+        //-------------------------------------------此处可以直接改为赋值，不提取点云,但时间代价并不大
         for (const auto &idx : it->indices)
             cloud_cluster->push_back((*cloud_foreground)[idx]); //*
         cloud_cluster->width = cloud_cluster->size();
         cloud_cluster->height = 1;
         cloud_cluster->is_dense = true;
+
+        // std::stringstream ss;
+        // ss << "object_cluster_" << object_num++ << ".pcd";
+        // pcl::io::savePCDFile(ss.str(), *cloud_cluster);
 
         //遍历
         for (auto &point : *cloud_cluster)

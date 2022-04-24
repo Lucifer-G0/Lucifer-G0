@@ -141,11 +141,11 @@ int main()
 	// cv::imwrite("border_2D.png",Depth);
 	// cv::waitKey();
 
-	// pcl::io::savePCDFile("fore_remove_support.pcd", *fore.cloud_foreground);
+	pcl::io::savePCDFile("fore_remove_support.pcd", *fore.cloud_foreground);
 
-	// fore.object_detect_2D();
-	// cv::imshow("object_detect_2D",fore.seg_image);
-	// cv::waitKey();
+	fore.object_detect_2D();
+	cv::imshow("object_detect_2D",fore.seg_image);
+	cv::waitKey();
 
 	return 0;
 }
