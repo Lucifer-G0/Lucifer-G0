@@ -142,10 +142,15 @@ int main()
 	// cv::waitKey();
 
 	pcl::io::savePCDFile("fore_remove_support.pcd", *fore.cloud_foreground);
-
+	fore.border_clean();
 	fore.object_detect_2D();
 	cv::imshow("object_detect_2D",fore.seg_image);
-	cv::waitKey();
+	while(true)
+	{
+		cv::waitKey();
+		sleep(3);
+	}
+	
 
 	return 0;
 }
