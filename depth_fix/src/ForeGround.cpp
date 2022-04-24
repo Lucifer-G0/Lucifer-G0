@@ -26,6 +26,9 @@ ForeGround::ForeGround(pcl::PointCloud<PointT>::Ptr _cloud_foreground, float for
 */
 void ForeGround::planar_seg()
 {
+    // 记录起始的时钟周期数
+    double time = (double)cv::getTickCount();
+
     pcl::SACSegmentation<PointT> seg;
     pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
     pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
@@ -35,20 +38,12 @@ void ForeGround::planar_seg()
     seg.setModelType(pcl::SACMODEL_PLANE);
     seg.setMethodType(pcl::SAC_RANSAC);
     seg.setMaxIterations(100);
-    seg.setDistanceThreshold(0.05); //前景精度较高，计算平面的距离阈值应当合理控制
-
-    //---------prepare for euclidean cluster extraction---------------------------
-    pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>());
-    tree->setInputCloud(cloud_foreground);
-    std::vector<pcl::PointIndices> cluster_indices;
-    pcl::EuclideanClusterExtraction<PointT> ec;
-    ec.setClusterTolerance(0.2); //目的是分割不靠近的同层平面，可以适当放宽
-    ec.setSearchMethod(tree);
-    ec.setMinClusterSize(0); //如果限制该约束，较小的聚类会自动并入大的里面，追求的效果是将其返还
+    seg.setDistanceThreshold(0.1); //前景精度较高，计算平面的距离阈值应当合理控制,但不能过小，否则相当一部分会作为杂质残留，影响后续质量
 
     //按照阈值分割出若干平面，需要法线辨别，法线可以从平面系数计算，平面法向量：(A,B,C)。目的:找出支撑面识别并去除
     for (int i = 0;; i++)
     {
+
         seg.setInputCloud(cloud_foreground);
         seg.segment(*inliers, *coefficients);
         std::cout << "inliers->indices.size():" << inliers->indices.size() << ", "
@@ -73,7 +68,8 @@ void ForeGround::planar_seg()
 
         if (A >= 0.5) //初步判定平面为水平方向平面,水平面需要聚类，分割或者去除同一平面不相连区域。
         {
-            std::cout << "A>=0.5. This is a horizontal plane!" << std::endl;
+            std::cout << std::endl
+                      << "A>=0.5. This is a horizontal plane!" << std::endl;
             // Extract the planar inliers from the input cloud
             pcl::PointCloud<PointT>::Ptr cloud_plane(new pcl::PointCloud<PointT>());
 
@@ -82,12 +78,24 @@ void ForeGround::planar_seg()
             extract.filter(*cloud_plane);
             std::cout << "PointCloud representing the planar component: " << cloud_plane->size() << " data points." << std::endl;
 
+            std::stringstream ss0;
+            ss0 << "cloud_plane_" << i << ".pcd";
+            pcl::io::savePCDFile(ss0.str(), *cloud_plane);
+
             //---------Remove the planar inliers, extract the rest----------
             extract.setNegative(true);
             extract.filter(*cloud_foreground);
 
             //----------euclidean cluster extraction------------------------
-            ec.setMaxClusterSize(cloud_plane->size());
+            //最好还是每次创建，如果多次重用同一个会导致未知问题，可能是没有回收，目前每次循环创建也可以，但不能保证更多的面不出问题。
+            pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>());
+            std::vector<pcl::PointIndices> cluster_indices;
+            pcl::EuclideanClusterExtraction<PointT> ec;
+            ec.setClusterTolerance(0.3); //目的是分割不靠近的同层平面，可以适当放宽---------------------------------此参数可能仍有待调整
+            ec.setMinClusterSize(3);     //如果限制该约束，较小的聚类会自动并入大的里面，追求的效果是将其返还
+            tree->setInputCloud(cloud_plane);
+            ec.setSearchMethod(tree);
+            ec.setMaxClusterSize(cloud_plane->size() + 1);
             ec.setInputCloud(cloud_plane);
             ec.extract(cluster_indices);
             std::cout << "cluster_indices.size() = " << cluster_indices.size() << std::endl;
@@ -113,14 +121,16 @@ void ForeGround::planar_seg()
                     cloud_cluster->height = 1;
                     cloud_cluster->is_dense = true;
                     std::stringstream ss;
-                    ss << "cloud_plane_" << j << ".pcd";
+                    ss << "cloud_cluster_" << i << "_" << j << ".pcd";
                     pcl::io::savePCDFile(ss.str(), *cloud_cluster);
-                    std::stringstream ss1;
-                    ss1 << "cloud_border_" << j << ".pcd";
-                    pcl::io::savePCDFile(ss1.str(), *extract_border(cloud_cluster));
+                    // std::stringstream ss1;
+                    // ss1 << "cloud_border_" << j << ".pcd";
+                    // pcl::io::savePCDFile(ss1.str(), *extract_border(cloud_cluster));
 
                     plane_clouds.push_back(*cloud_cluster);
                     plane_coes.push_back(*coefficients);
+
+                    j++;
                 }
             }
         }
@@ -129,12 +139,18 @@ void ForeGround::planar_seg()
             //----------------------------------------------------------------------------------------------------------
             //--------------------------Waiting for process---------------------------------------------------------
             //---------------------------------------------------------------------------------------
-            std::cout << "A<0.5. This is not a horizontal plane!" << std::endl;
+            std::cout << std::endl
+                      << "A<0.5. This is not a horizontal plane!" << std::endl;
             //---------Remove the planar inliers, extract the rest----------
             extract.setNegative(true);
             extract.filter(*cloud_foreground);
         }
     }
+
+    // 计算时间差
+    time = ((double)cv::getTickCount() - time) / cv::getTickFrequency();
+    // 输出运行时间
+    std::cout << "planar_seg 运行时间: " << time << "秒\n\n";
 }
 
 /*
@@ -145,17 +161,19 @@ void ForeGround::planar_seg()
 pcl::PointCloud<PointT>::Ptr ForeGround::extract_border(pcl::PointCloud<PointT>::Ptr cloud_cluster, int n)
 {
     // 记录起始的时钟周期数
-	double time = (double)cv::getTickCount();
+    double time = (double)cv::getTickCount();
 
     pcl::PointCloud<PointT>::Ptr cloud_border(new pcl::PointCloud<PointT>);
     cv::Mat map = cv::Mat::zeros(480, 640, CV_32F);
 
+    int count = 0;
     //形成映射图像，便于边界提取
     for (auto &point : *cloud_cluster)
     {
         int r = point.x * constant / point.z; // grid_x = x * constant / depth
         int c = point.y * constant / point.z;
         map.at<float>(r, c) = point.z;
+        count++;
     }
 
     std::deque<int> rc_idx_deque;
@@ -174,19 +192,19 @@ pcl::PointCloud<PointT>::Ptr ForeGround::extract_border(pcl::PointCloud<PointT>:
             if (rc_idx_deque.empty() == false)
             {
                 int column = rc_idx_deque.front();
-                float z=map.at<float>(r, column);
-                float x=r*z/constant;
-                float y=column*z/constant;
-                cloud_border->push_back(PointT(x,y,z));
+                float z = map.at<float>(r, column);
+                float x = r * z / constant;
+                float y = column * z / constant;
+                cloud_border->push_back(PointT(x, y, z));
                 rc_idx_deque.pop_front();
             }
             if (rc_idx_deque.empty() == false)
             {
                 int column = rc_idx_deque.back();
-                float z=map.at<float>(r, column);
-                float x=r*z/constant;
-                float y=column*z/constant;
-                cloud_border->push_back(PointT(x,y,z));
+                float z = map.at<float>(r, column);
+                float x = r * z / constant;
+                float y = column * z / constant;
+                cloud_border->push_back(PointT(x, y, z));
                 rc_idx_deque.pop_back();
             }
         }
@@ -207,29 +225,29 @@ pcl::PointCloud<PointT>::Ptr ForeGround::extract_border(pcl::PointCloud<PointT>:
             if (rc_idx_deque.empty() == false)
             {
                 int row = rc_idx_deque.front();
-                float z=map.at<float>(row, c);
-                float x=row*z/constant;
-                float y=c*z/constant;
-                cloud_border->push_back(PointT(x,y,z));
+                float z = map.at<float>(row, c);
+                float x = row * z / constant;
+                float y = c * z / constant;
+                cloud_border->push_back(PointT(x, y, z));
                 rc_idx_deque.pop_front();
             }
             if (rc_idx_deque.empty() == false)
             {
                 int row = rc_idx_deque.back();
-                float z=map.at<float>(row, c);
-                float x=row*z/constant;
-                float y=c*z/constant;
-                cloud_border->push_back(PointT(x,y,z));
+                float z = map.at<float>(row, c);
+                float x = row * z / constant;
+                float y = c * z / constant;
+                cloud_border->push_back(PointT(x, y, z));
                 rc_idx_deque.pop_back();
             }
         }
         rc_idx_deque.clear();
     }
     // 计算时间差
-	time = ((double)cv::getTickCount() - time) / cv::getTickFrequency();
+    time = ((double)cv::getTickCount() - time) / cv::getTickFrequency();
 
-	// 输出运行时间
-	std::cout << "extract_border 运行时间: " << time << "秒\n";
+    // 输出运行时间
+    std::cout << "extract_border 运行时间: " << time << "秒\n";
 
     return cloud_border;
 }
@@ -242,7 +260,7 @@ pcl::PointCloud<PointT>::Ptr ForeGround::extract_border(pcl::PointCloud<PointT>:
 std::vector<cv::Point> ForeGround::extract_border_2D(pcl::PointCloud<PointT> cloud_cluster, int n)
 {
     // 记录起始的时钟周期数
-	double time = (double)cv::getTickCount();
+    double time = (double)cv::getTickCount();
 
     std::vector<cv::Point> border_points;
     cv::Mat map = cv::Mat::zeros(480, 640, CV_8U);
@@ -271,13 +289,13 @@ std::vector<cv::Point> ForeGround::extract_border_2D(pcl::PointCloud<PointT> clo
             if (rc_idx_deque.empty() == false)
             {
                 int column = rc_idx_deque.front();
-                border_points.push_back(cv::Point(column,r));
+                border_points.push_back(cv::Point(column, r));
                 rc_idx_deque.pop_front();
             }
             if (rc_idx_deque.empty() == false)
             {
                 int column = rc_idx_deque.back();
-                border_points.push_back(cv::Point(column,r));
+                border_points.push_back(cv::Point(column, r));
                 rc_idx_deque.pop_back();
             }
         }
@@ -295,16 +313,16 @@ std::vector<cv::Point> ForeGround::extract_border_2D(pcl::PointCloud<PointT> clo
         }
         for (int i = 0; i < n; i++)
         {
-           if (rc_idx_deque.empty() == false)
+            if (rc_idx_deque.empty() == false)
             {
                 int row = rc_idx_deque.front();
-                border_points.push_back(cv::Point(c,row));
+                border_points.push_back(cv::Point(c, row));
                 rc_idx_deque.pop_front();
             }
             if (rc_idx_deque.empty() == false)
             {
                 int row = rc_idx_deque.back();
-                border_points.push_back(cv::Point(c,row));
+                border_points.push_back(cv::Point(c, row));
                 rc_idx_deque.pop_back();
             }
         }
@@ -312,9 +330,65 @@ std::vector<cv::Point> ForeGround::extract_border_2D(pcl::PointCloud<PointT> clo
     }
 
     // 计算时间差
-	time = ((double)cv::getTickCount() - time) / cv::getTickFrequency();
-	// 输出运行时间
-	std::cout << "extract_border 运行时间: " << time << "秒\n";
+    time = ((double)cv::getTickCount() - time) / cv::getTickFrequency();
+    // 输出运行时间
+    std::cout << "extract_border_2D 运行时间: " << time << "秒\n";
 
     return border_points;
+}
+
+/*
+    [in]: cloud_foreground,前景点云，此时为去除平面垂面后的前景点云的剩余点云
+    [out]: write object serial number on "seg_image", which is a Mat storing segmentation result
+*/
+void ForeGround::object_detect_2D()
+{
+    // 记录起始的时钟周期数
+    double time = (double)cv::getTickCount();
+
+    //-------------step1:对剩余点云进行距离聚类-------------------------------
+    pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>());
+    tree->setInputCloud(cloud_foreground);
+
+    std::vector<pcl::PointIndices> cluster_indices;
+    pcl::EuclideanClusterExtraction<PointT> ec;
+    ec.setClusterTolerance(0.05); //物体距离聚类，阈值应当适当小一些，独立部分较小会自动归属于附近类
+    ec.setMinClusterSize(30);
+    ec.setMaxClusterSize(20000);
+    ec.setSearchMethod(tree);
+    ec.setInputCloud(cloud_foreground);
+    ec.extract(cluster_indices);
+
+    if (cluster_indices.size() == 0)
+    {
+        std::cout << "cluster_indices.size()==0" << std::endl;
+    }
+
+    //-------------step2:对不同聚类结果分别赋予不同的序列号(根据object_no)----------------
+    //遍历聚类
+    for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
+    {
+        pcl::PointCloud<PointT>::Ptr cloud_cluster(new pcl::PointCloud<PointT>);
+        //-------------------------------------------此处可以直接改为赋值，不提取点云
+        for (const auto &idx : it->indices)
+            cloud_cluster->push_back((*cloud_foreground)[idx]); //*
+        cloud_cluster->width = cloud_cluster->size();
+        cloud_cluster->height = 1;
+        cloud_cluster->is_dense = true;
+
+        //遍历
+        for (auto &point : *cloud_cluster)
+        {
+            int r = point.x * constant / point.z; // grid_x = x * constant / depth
+            int c = point.y * constant / point.z;
+            seg_image.at<uchar>(r, c) = object_no;
+        }
+        //一个物体处理结束,序号加一
+        object_no++;
+    }
+
+    // 计算时间差
+    time = ((double)cv::getTickCount() - time) / cv::getTickFrequency();
+    // 输出运行时间
+    std::cout << "object_detect_2D 运行时间: " << time << "秒\n";
 }

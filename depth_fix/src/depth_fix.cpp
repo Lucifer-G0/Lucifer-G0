@@ -128,19 +128,24 @@ int main()
 	//---------------------------------前景平面修复,需注意前景必须去除零点，因为零点占相当大部分-----------------------------------------------------
 	ForeGround fore(cloud_foreground,fore_seg_threshold_percent);
 	fore.planar_seg();
+	std::cout<<"planar_seg over"<<std::endl;
 
-	Depth = depth_to_uint8(fix.get_result());
+	// Depth = depth_to_uint8(fix.get_result());
 
-	std::vector<cv::Point> border_points=fore.extract_border_2D(fore.plane_clouds[0]);
-	for (auto &point : border_points)
-    {
-        cv::circle(Depth,point,0.1,cv::Scalar(200));
-    }
-	cv::imshow("show 2D border",Depth);
-	cv::imwrite("border_2D.png",Depth);
-	cv::waitKey();
+	// std::vector<cv::Point> border_points=fore.extract_border_2D(fore.plane_clouds[0]);
+	// for (auto &point : border_points)
+    // {
+    //     cv::circle(Depth,point,0.1,cv::Scalar(200));
+    // }
+	// cv::imshow("show 2D border",Depth);
+	// cv::imwrite("border_2D.png",Depth);
+	// cv::waitKey();
 
-	// pcl::io::savePCDFile("fore_remove_support.pcd", *cloud_filtered);
+	// pcl::io::savePCDFile("fore_remove_support.pcd", *fore.cloud_foreground);
+
+	// fore.object_detect_2D();
+	// cv::imshow("object_detect_2D",fore.seg_image);
+	// cv::waitKey();
 
 	return 0;
 }
