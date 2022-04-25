@@ -27,7 +27,9 @@ int main()
 	float max_depth = 50.0f;
 	float fore_seg_threshold_percent = 0.1f; //前景分割是否平面阈值，前景点云大小的百分比
 
-	cv::Mat Depth = cv::imread("00000-depth.png", -1);
+	std::string depth_path="00001-depth.png";
+
+	cv::Mat Depth = cv::imread(depth_path, -1);
 	Depth.convertTo(Depth, CV_32F);
 	Fix fix(Depth);
 
@@ -44,7 +46,7 @@ int main()
 
 	pcl::PointCloud<PointT>::Ptr cloud_foreground(new pcl::PointCloud<PointT>);
 
-	cloud = depth2cloud("00000-depth.png");
+	cloud = depth2cloud(depth_path);
 
 	//--------------计算背景的深度阈值----------------------
 	std::vector<float> sorted_Depth;
@@ -143,13 +145,13 @@ int main()
 
 	pcl::io::savePCDFile("fore_remove_support.pcd", *fore.cloud_foreground);
 	fore.border_clean();
-	fore.object_detect_2D();
-	cv::imshow("object_detect_2D",fore.seg_image);
-	while(true)
-	{
-		cv::waitKey();
-		sleep(3);
-	}
+	// fore.object_detect_2D();
+	// cv::imshow("object_detect_2D",fore.seg_image);
+	// while(true)
+	// {
+	// 	cv::waitKey();
+	// 	sleep(3);
+	// }
 	
 
 	return 0;

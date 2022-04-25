@@ -21,10 +21,11 @@ public:
     pcl::PointCloud<PointT>::Ptr extract_border(pcl::PointCloud<PointT>::Ptr cloud_cluster, int n = 3);
     std::vector<cv::Point> extract_border_2D(pcl::PointCloud<PointT> cloud_cluster, int n = 3);
 
+    bool ellipse_fit( pcl::PointCloud<PointT>::Ptr border_cloud);
     void border_clean();
     void object_detect_2D_bak();
     void object_detect_2D();
-
+    
 
     void shape_fit();
     
@@ -42,5 +43,6 @@ private:
     int fore_seg_threshold; //水平面点数量阈值
 
     std::vector<pcl::ModelCoefficients> plane_coes; //存储识别出的独立水平面的参数
+    cv::Point2f get_ellipse_nearest_point(float semi_major, float semi_minor, cv::Point2f p);
     
 };
