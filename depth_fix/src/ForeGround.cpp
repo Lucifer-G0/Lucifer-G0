@@ -542,12 +542,6 @@ void ForeGround::object_detect_2D()
 */
 void ForeGround::border_clean()
 {
-    float circle_threshold_percent = 0.5;
-    float line_threshold_percent = 0.2;
-    //前景精度较高，距离阈值应当合理控制,但不能过小，否则相当一部分会无法识别
-    float circle_dis_threshold = 0.05;
-    float line_dis_threshold = 0.05;
-
     int plane_num = plane_border_clouds.size();
     //循环遍历所有平面
     for (int plane_no = 0; plane_no < plane_num; plane_no++)
@@ -556,86 +550,87 @@ void ForeGround::border_clean()
         pcl::PointCloud<PointT>::Ptr border_cloud(new pcl::PointCloud<PointT>);
         for (auto &point : plane_border_clouds[plane_no])
             border_cloud->push_back(point); //遍历平面边缘内点
-        int border_point_num = border_cloud->size();
-        std::cout << "total number of this border: " << border_point_num << std::endl;
+        std::cout << std::endl<<"total number of this border: " << border_cloud->size() << std::endl;
 
         //------border cloud save-------------
         std::stringstream ss;
         ss << "border_cloud_" << plane_no << ".pcd";
         pcl::io::savePCDFile(ss.str(), *border_cloud);
 
-        pcl::PointCloud<PointT>::Ptr cloud_pure_border(new pcl::PointCloud<PointT>()); //用于保存纯净的边界点
         //------------opencv二维角度拟合椭圆-------------------
-        ellipse_fit(border_cloud);
+        if (ellipse_fit(border_cloud))
+        {
+        }
+        else
+        {
+            lines_fit(border_cloud);
+        }
+    }
+}
+/*
+    @brief 此前应先尝试拟合椭圆，不是椭圆则认为是多边形，从边界点中拟合出若干满足阈值的线段。
+    @param border_cloud: 边界点集合(非纯净的)
+    @param plane_no: 用于保存中间点云数据(拟合出的直线内点)
+    @param [out] 将线段内点作为纯净边界点组合存储进plane_pure_border_clouds
+*/
+void ForeGround::lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, int plane_no)
+{
+    //阈值设置-------------------后续可能作为参数输入？
+    float line_dis_threshold = 0.05; //前景精度较高，距离阈值应当合理控制,但不能过小，否则相当一部分会无法识别
+    float line_threshold_percent = 0.2;
 
-        // std::cout << "fitting circle inliers number: " << cir_inliers->indices.size() << std::endl;
+    int border_point_num = border_cloud->size();    //border_cloud会过滤，数目会变化，因而应当在处理前先算。
 
-        // if (cir_inliers->indices.size() > border_point_num * circle_threshold_percent)
-        // {
-        //     std::cout << "This is a circle border!" << std::endl;
-        //     pcl::ExtractIndices<PointT> cir_extract;
-        //     cir_extract.setInputCloud(border_cloud);
-        //     cir_extract.setIndices(cir_inliers);
-        //     // Extract the circle inliers from the input cloud
-        //     cir_extract.setNegative(false);
-        //     cir_extract.filter(*cloud_pure_border);
+    pcl::PointCloud<PointT>::Ptr cloud_pure_border(new pcl::PointCloud<PointT>()); //用于保存纯净的边界点
 
-        //     std::cout << "push_back " << cloud_pure_border->size() << " points to plane_pure_border_clouds" << std::endl;
-        //     plane_pure_border_clouds.push_back(*cloud_pure_border);
-        // }
-        // else
-        // {
-        //     std::cout << "This is not a circle border!" << std::endl;
-        //     int line_no = 0;
-        //     while (true)
-        //     {
-        //         pcl::SACSegmentation<PointT> line_seg;
-        //         pcl::PointIndices::Ptr line_inliers(new pcl::PointIndices);
-        //         pcl::ModelCoefficients::Ptr line_coefficients(new pcl::ModelCoefficients);
-        //         pcl::PointCloud<PointT>::Ptr line_cloud_plane(new pcl::PointCloud<PointT>());
+    int line_no = 0;
+    while (true)
+    {
+        pcl::SACSegmentation<PointT> line_seg;
+        pcl::PointIndices::Ptr line_inliers(new pcl::PointIndices);
+        pcl::ModelCoefficients::Ptr line_coefficients(new pcl::ModelCoefficients);
+        pcl::PointCloud<PointT>::Ptr line_cloud_plane(new pcl::PointCloud<PointT>());
 
-        //         line_seg.setOptimizeCoefficients(true);
-        //         line_seg.setModelType(pcl::SACMODEL_LINE);
-        //         line_seg.setMethodType(pcl::SAC_RANSAC);
-        //         line_seg.setMaxIterations(100);
-        //         line_seg.setDistanceThreshold(line_dis_threshold); //前景精度较高，计算圆的距离阈值应当合理控制,但不能过小，否则相当一部分会无法识别
-        //         line_seg.setInputCloud(border_cloud);
-        //         line_seg.segment(*line_inliers, *line_coefficients);
+        line_seg.setOptimizeCoefficients(true);
+        line_seg.setModelType(pcl::SACMODEL_LINE);
+        line_seg.setMethodType(pcl::SAC_RANSAC);
+        line_seg.setMaxIterations(100);
+        line_seg.setDistanceThreshold(line_dis_threshold); //前景精度较高，计算圆的距离阈值应当合理控制,但不能过小，否则相当一部分会无法识别
+        line_seg.setInputCloud(border_cloud);
+        line_seg.segment(*line_inliers, *line_coefficients);
 
-        //         std::cout << "fitting line inliers number: " << line_inliers->indices.size() << std::endl;
+        std::cout << "fitting line inliers number: " << line_inliers->indices.size() << std::endl;
 
-        //         if (line_inliers->indices.size() < border_point_num * line_threshold_percent)
-        //         {
-        //             std::cout << "This line is too small!" << std::endl;
-        //             std::cout << "push_back " << cloud_pure_border->size() << " points to plane_pure_border_clouds" << std::endl;
-        //             plane_pure_border_clouds.push_back(*cloud_pure_border);
-        //             break;
-        //         }
-        //         else
-        //         {
-        //             std::cout << "This is a line border!" << std::endl;
-        //             pcl::PointCloud<PointT>::Ptr cloud_line_border(new pcl::PointCloud<PointT>()); //用于暂存纯净的直线边界点
-        //             pcl::ExtractIndices<PointT> line_extract;
-        //             line_extract.setInputCloud(border_cloud);
-        //             line_extract.setIndices(line_inliers);
-        //             // Extract the line inliers from the input cloud
-        //             line_extract.setNegative(false);
-        //             line_extract.filter(*cloud_line_border);
-        //             //将这条直线存入纯净边界。
-        //             for (auto &point : *cloud_line_border)
-        //                 cloud_pure_border->push_back(point); //遍历平面边缘内点
+        if (line_inliers->indices.size() < border_point_num * line_threshold_percent)
+        {
+            std::cout << "This line is too small!" << std::endl;
+            std::cout << "push_back " << cloud_pure_border->size() << " points to plane_pure_border_clouds" << std::endl;
+            plane_pure_border_clouds.push_back(*cloud_pure_border);
+            break;
+        }
+        else
+        {
+            std::cout << "This is a line border!" << std::endl;
+            pcl::PointCloud<PointT>::Ptr cloud_line_border(new pcl::PointCloud<PointT>()); //用于暂存纯净的直线边界点
+            pcl::ExtractIndices<PointT> line_extract;
+            line_extract.setInputCloud(border_cloud);
+            line_extract.setIndices(line_inliers);
+            // Extract the line inliers from the input cloud
+            line_extract.setNegative(false);
+            line_extract.filter(*cloud_line_border);
+            //将这条直线存入纯净边界。
+            for (auto &point : *cloud_line_border)
+                cloud_pure_border->push_back(point); //遍历平面边缘内点
 
-        //             // line cloud save
-        //             std::stringstream ss_line;
-        //             ss_line << "border_line_" << plane_no << "_" << line_no++ << ".pcd";
-        //             pcl::io::savePCDFile(ss_line.str(), *cloud_line_border);
+            // line cloud save
+            std::stringstream ss_line;
+            ss_line << "border_line_" << plane_no << "_" << line_no++ << ".pcd";
+            pcl::io::savePCDFile(ss_line.str(), *cloud_line_border);
 
-        //             //将直线从边界点云中去除
-        //             line_extract.setNegative(true);
-        //             line_extract.filter(*border_cloud);
-        //         }
-        //     }
-        // }
+            //将直线从边界点云中去除
+            line_extract.setNegative(true);
+            line_extract.filter(*border_cloud);
+        }
     }
 }
 
@@ -666,7 +661,7 @@ void fg_store_code()
 }
 
 /*
-    @brief opencv二维角度拟合椭圆,[out]:如果成功将纯净内点存入plane_pure_border_clouds
+    @brief opencv二维角度拟合椭圆,[out]:如果成功将纯净内点组合存入plane_pure_border_clouds
     @param border_cloud: 边界点集合(非纯净的)
     @return 是否成功拟合椭圆。
 */
@@ -680,14 +675,14 @@ bool ForeGround::ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud)
 
     //将边界点转化为二维二值图像，便于二维拟合
     std::vector<cv::Point> border_points;
-    cv::Mat binary_image = cv::Mat::zeros(480, 640, CV_8U);
+    // cv::Mat binary_image = cv::Mat::zeros(480, 640, CV_8U);
 
     for (auto &point : *border_cloud)
     {
         int r = point.x * constant / point.z; // grid_x = x * constant / depth
         int c = point.y * constant / point.z;
         border_points.push_back(cv::Point(c, r));
-        binary_image.at<uchar>(r, c) = 100;
+        // binary_image.at<uchar>(r, c) = 100;
     }
     //用所给点拟合出了一个椭圆模型，参数返回
     cv::RotatedRect ellipse_rect = fitEllipse(border_points);
@@ -739,9 +734,9 @@ bool ForeGround::ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud)
         pcl::PointCloud<PointT>::Ptr cloud_pure_border(new pcl::PointCloud<PointT>()); //用于保存纯净的边界点
         int border_point_idx = 0;
         int pure_border_point_no = 0;
-        for (auto &point : *border_cloud)   //所有的处理都是按照边界点的顺序执行的，因而匹配纯净点也可以按此顺序
+        for (auto &point : *border_cloud) //所有的处理都是按照边界点的顺序执行的，因而匹配纯净点也可以按此顺序
         {
-            if(border_point_idx == pure_border_point_idxs[pure_border_point_no])
+            if (border_point_idx == pure_border_point_idxs[pure_border_point_no])
             {
                 cloud_pure_border->push_back(point);
                 pure_border_point_no++;
@@ -750,13 +745,15 @@ bool ForeGround::ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud)
         }
 
         //---------------------store inlier points in plane_pure_border_clouds ---------------------------------
-        std::cout << "push_back " << cloud_pure_border->size() << " points to plane_pure_border_clouds" << std::endl<< std::endl;
+        std::cout << "push_back " << cloud_pure_border->size() << " points to plane_pure_border_clouds" << std::endl
+                  << std::endl;
         plane_pure_border_clouds.push_back(*cloud_pure_border);
         return true;
     }
     else
     {
-        std::cout << "This is not a ellipse, border_point_num = " << border_point_num << "inliers_num=" << inliers_num << std::endl<< std::endl;
+        std::cout << "This is not a ellipse, border_point_num = " << border_point_num << "inliers_num=" << inliers_num << std::endl
+                  << std::endl;
         return false;
     }
 }

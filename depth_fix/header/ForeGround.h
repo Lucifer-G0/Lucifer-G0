@@ -21,7 +21,11 @@ public:
     pcl::PointCloud<PointT>::Ptr extract_border(pcl::PointCloud<PointT>::Ptr cloud_cluster, int n = 3);
     std::vector<cv::Point> extract_border_2D(pcl::PointCloud<PointT> cloud_cluster, int n = 3);
 
+    //拟合函数，用于提取纯净边界点，剔除因遮挡或缺失造成的边界
+
     bool ellipse_fit( pcl::PointCloud<PointT>::Ptr border_cloud);
+    void lines_fit( pcl::PointCloud<PointT>::Ptr border_cloud, int plane_no=999);
+
     void border_clean();
     void object_detect_2D_bak();
     void object_detect_2D();

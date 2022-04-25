@@ -130,7 +130,6 @@ int main()
 	//---------------------------------前景平面修复,需注意前景必须去除零点，因为零点占相当大部分-----------------------------------------------------
 	ForeGround fore(cloud_foreground,fore_seg_threshold_percent);
 	fore.planar_seg();
-	std::cout<<"planar_seg over"<<std::endl;
 
 	// Depth = depth_to_uint8(fix.get_result());
 
@@ -145,13 +144,13 @@ int main()
 
 	pcl::io::savePCDFile("fore_remove_support.pcd", *fore.cloud_foreground);
 	fore.border_clean();
-	// fore.object_detect_2D();
-	// cv::imshow("object_detect_2D",fore.seg_image);
-	// while(true)
-	// {
-	// 	cv::waitKey();
-	// 	sleep(3);
-	// }
+	fore.object_detect_2D();
+	cv::imshow("object_detect_2D",fore.seg_image);
+	while (true)
+    {
+        if (cv::waitKey(30) == 27) //延时30ms,播放期间按下esc按键则退出，并返回键值
+            break;
+    }
 	
 
 	return 0;
