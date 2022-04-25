@@ -542,6 +542,9 @@ void ForeGround::object_detect_2D()
 */
 void ForeGround::border_clean()
 {
+    // 记录起始的时钟周期数
+    double time = (double)cv::getTickCount();
+
     int plane_num = plane_border_clouds.size();
     //循环遍历所有平面
     for (int plane_no = 0; plane_no < plane_num; plane_no++)
@@ -566,6 +569,11 @@ void ForeGround::border_clean()
             lines_fit(border_cloud);
         }
     }
+
+    // 计算时间差
+    time = ((double)cv::getTickCount() - time) / cv::getTickFrequency();
+    // 输出运行时间
+    std::cout << "border_clean 运行时间: " << time << "秒\n";
 }
 /*
     @brief 此前应先尝试拟合椭圆，不是椭圆则认为是多边形，从边界点中拟合出若干满足阈值的线段。

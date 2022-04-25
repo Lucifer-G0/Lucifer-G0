@@ -27,7 +27,7 @@ int main()
 	float max_depth = 50.0f;
 	float fore_seg_threshold_percent = 0.1f; //前景分割是否平面阈值，前景点云大小的百分比
 
-	std::string depth_path="00001-depth.png";
+	std::string depth_path="00000-depth.png";
 
 	cv::Mat Depth = cv::imread(depth_path, -1);
 	Depth.convertTo(Depth, CV_32F);
@@ -146,13 +146,12 @@ int main()
 	fore.border_clean();
 	fore.object_detect_2D();
 	cv::imshow("object_detect_2D",fore.seg_image);
-	while (true)
-    {
-        if (cv::waitKey(30) == 27) //延时30ms,播放期间按下esc按键则退出，并返回键值
-            break;
-    }
 	
-
+	while (cv::waitKey(100) != 27)
+    {
+		if(cv::getWindowProperty("object_detect_2D",0) == -1)//处理手动点击叉号关闭退出，报错退出，只能放在结尾
+			break;
+    }
 	return 0;
 }
 
