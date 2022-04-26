@@ -76,6 +76,8 @@ void ForeGround::planar_seg()
         extract.setInputCloud(cloud_foreground);
         extract.setIndices(inliers);
 
+        //用于暂存竖直面
+        pcl::PointCloud<PointT>::Ptr cloud_vps(new pcl::PointCloud<PointT>());
         if (A >= 0.5) //初步判定平面为水平方向平面,水平面需要聚类，分割或者去除同一平面不相连区域。
         {
             std::cout << std::endl
@@ -130,12 +132,6 @@ void ForeGround::planar_seg()
                     cloud_cluster->width = cloud_cluster->size();
                     cloud_cluster->height = 1;
                     cloud_cluster->is_dense = true;
-                    // std::stringstream ss;
-                    // ss << "cloud_cluster_" << i << "_" << j << ".pcd";
-                    // pcl::io::savePCDFile(ss.str(), *cloud_cluster);
-                    // std::stringstream ss1;
-                    // ss1 << "cloud_border_" << i << "_"<< j << ".pcd";
-                    // pcl::io::savePCDFile(ss1.str(), *extract_border(cloud_cluster));
 
                     //遍历
                     for (auto &point : *cloud_cluster)
@@ -155,13 +151,21 @@ void ForeGround::planar_seg()
                 }
             }
         }
-        else //不是水平面：忽略该平面，仍然要从剩余点云中去除，不然无法继续下一个平面。--------------------------需要做处理，不然垂面面直接没有了。可以考虑直接识别。
+        else //不是水平面：忽略该平面，仍然要从剩余点云中去除，不然无法继续下一个平面。----需要做处理，不然垂面面直接没有了。可以考虑直接识别。暂时将其暂存并返回剩余点云
         {
-            //----------------------------------------------------------------------------------------------------------
-            //--------------------------Waiting for process---------------------------------------------------------
-            //---------------------------------------------------------------------------------------
             std::cout << std::endl
                       << "A<0.5. This is not a horizontal plane!" << std::endl;
+
+            // Extract the planar inliers from the input cloud
+            pcl::PointCloud<PointT>::Ptr cloud_vp(new pcl::PointCloud<PointT>());
+            //-------Get the points associated with the planar surface--------------
+            extract.setNegative(false);
+            extract.filter(*cloud_vp);
+            for (auto &point : *cloud_vp)
+                cloud_vps->push_back(point);
+            std::cout << "Return it to foreground , num: " << cloud_vp->size() << std::endl
+                      << std::endl;
+
             //---------Remove the planar inliers, extract the rest----------
             extract.setNegative(true);
             extract.filter(*cloud_foreground);
@@ -553,7 +557,8 @@ void ForeGround::border_clean()
         pcl::PointCloud<PointT>::Ptr border_cloud(new pcl::PointCloud<PointT>);
         for (auto &point : plane_border_clouds[plane_no])
             border_cloud->push_back(point); //遍历平面边缘内点
-        std::cout << std::endl<<"total number of this border: " << border_cloud->size() << std::endl;
+        std::cout << std::endl
+                  << "total number of this border: " << border_cloud->size() << std::endl;
 
         //------border cloud save-------------
         std::stringstream ss;
@@ -587,7 +592,7 @@ void ForeGround::lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, int plane_
     float line_dis_threshold = 0.05; //前景精度较高，距离阈值应当合理控制,但不能过小，否则相当一部分会无法识别
     float line_threshold_percent = 0.2;
 
-    int border_point_num = border_cloud->size();    //border_cloud会过滤，数目会变化，因而应当在处理前先算。
+    int border_point_num = border_cloud->size(); // border_cloud会过滤，数目会变化，因而应当在处理前先算。
 
     pcl::PointCloud<PointT>::Ptr cloud_pure_border(new pcl::PointCloud<PointT>()); //用于保存纯净的边界点
 
@@ -644,6 +649,13 @@ void ForeGround::lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, int plane_
 
 void fg_store_code()
 {
+    // std::stringstream ss;
+    // ss << "cloud_cluster_" << i << "_" << j << ".pcd";
+    // pcl::io::savePCDFile(ss.str(), *cloud_cluster);
+    // std::stringstream ss1;
+    // ss1 << "cloud_border_" << i << "_"<< j << ".pcd";
+    // pcl::io::savePCDFile(ss1.str(), *extract_border(cloud_cluster));
+
     // //------------先拟合圆形-------------------
     // pcl::SACSegmentation<PointT> cir_seg;
     // pcl::PointIndices::Ptr cir_inliers(new pcl::PointIndices);
