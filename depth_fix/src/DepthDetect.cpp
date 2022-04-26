@@ -1,27 +1,243 @@
-#include "ForeGround.h"
-
-#include <pcl/ModelCoefficients.h>
-#include <pcl/filters/extract_indices.h>
-#include <pcl/sample_consensus/method_types.h>
-#include <pcl/sample_consensus/model_types.h>
-#include <pcl/search/kdtree.h>
-#include <pcl/segmentation/sac_segmentation.h>
-#include <pcl/segmentation/extract_clusters.h>
-#include <pcl/io/pcd_io.h>
-
 #include <opencv2/opencv.hpp>
 #include <math.h>
 
-/*
-    @param _cloud_foreground: 分割后的前景点云
-    @param fore_seg_threshold_percent: 前景分割阈值百分比，判断分割出的平面中点的数量是否达标,用于控制分割结束
-*/
-ForeGround::ForeGround(pcl::PointCloud<PointT>::Ptr _cloud_foreground, float fore_seg_threshold_percent)
+#include <pcl/segmentation/extract_clusters.h>
+#include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/sample_consensus/method_types.h>
+#include <pcl/sample_consensus/model_types.h>
+
+#include <pcl/ModelCoefficients.h>
+#include <pcl/filters/extract_indices.h>
+#include <pcl/search/kdtree.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl/filters/passthrough.h>
+
+#include "DepthDetect.h"
+#include "ObjectWindow.h"
+#include "transform.h"
+
+DepthDetect::DepthDetect(int dimension)
 {
-    cloud_foreground = _cloud_foreground;
+    // 有些可以作为参数输入。
+    float back_threshold_percent = 0.85f; //用于计算背景的深度阈值，百分比形式。0.85比较合适？
+    float back_threshold = 0.0f;
+    float max_depth = 50.0f;
+    float fore_seg_threshold_percent = 0.1f; //前景分割是否平面阈值，前景点云大小的百分比
+    std::string depth_path = "00000-depth.png";
+
+    Depth = cv::imread(depth_path, -1);
+    Depth.convertTo(Depth, CV_32F);
+    width = Depth.cols;
+    height = Depth.rows;
+
+    Mask = cv::Mat(Depth.rows, Depth.cols, CV_8U);
+    for (int r = 0; r < Depth.rows; r++)
+        for (int c = 0; c < Depth.cols; c++)
+            if (Depth.at<float>(r, c) == 0) //是空洞点
+                Mask.at<uchar>(r, c) = 1;
+            else
+                Mask.at<uchar>(r, c) = 0;
+
+    pcl::PointCloud<PointT>::Ptr cloud(new pcl::PointCloud<PointT>);
+    cloud = depth2cloud(depth_path);
+    //--------------计算背景的深度阈值------------------------------------------
+    std::vector<float> sorted_Depth;
+    for (auto &point : *cloud)
+    {
+        sorted_Depth.push_back(point.z);
+    }
+    std::sort(sorted_Depth.begin(), sorted_Depth.end());
+    back_threshold = sorted_Depth[(int)(sorted_Depth.size() * back_threshold_percent)]; //根据百分比计算得到阈值
+    max_depth = sorted_Depth[sorted_Depth.size() - 1] + 0.001;                          //获得最大值，不清楚过滤的开闭，因而加一点避免最大值被过滤
+
+    //---------根据阈值过滤出背景,分割出背景和前景------------------------------------
+    cloud_background = pcl::PointCloud<PointT>::Ptr(new pcl::PointCloud<PointT>);
+    cloud_foreground = pcl::PointCloud<PointT>::Ptr(new pcl::PointCloud<PointT>);
+    pcl::PassThrough<PointT> pass;
+    pass.setInputCloud(cloud);
+    pass.setFilterFieldName("z");
+    pass.setFilterLimits(back_threshold, max_depth); //阈值到最大值
+    pass.filter(*cloud_background);                  //背景点云
+    pcl::io::savePCDFile("cloud_background.pcd", *cloud_background);
+    pass.setFilterLimits(0.001, back_threshold - 0.001);
+    pass.filter(*cloud_foreground); //前景点云,需注意前景必须去除零点，因为零点占相当大部分
+    pcl::io::savePCDFile("cloud_foreground.pcd", *cloud_foreground);
+
     fore_seg_threshold = fore_seg_threshold_percent * cloud_foreground->size();
+
     hp_no = hp_start_no;
     object_no = object_start_no;
+    vp_no = vp_start_no;
+}
+
+/*
+    背景数据精度较低，比较杂乱，缺失较大，但总体上其位置分布相对集中，先聚类，然后采用较大的阈值在每个聚类内拟合出一个平面。
+    [IN] cloud_background: 分割出的背景点云数据。
+    [OUT]: Depth 每个聚类拟合一个矩形平面，将背景的空洞修复值填充到Depth | seg_image 根据所在平面序号填充 seg_image
+    @param dimension: 维度(2 or 3) 2维在seg_image矩形填充平面序号，3维对深度数据Depth进行矩形区域恢复
+*/
+void DepthDetect::back_cluster_extract(int dimension)
+{
+    //------------------- Create the segmentation object for the planar model and set all the parameters----------------
+    pcl::SACSegmentation<PointT> seg;
+    pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
+    pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
+    pcl::PointCloud<PointT>::Ptr cloud_plane(new pcl::PointCloud<PointT>());
+
+    seg.setOptimizeCoefficients(true);
+    seg.setModelType(pcl::SACMODEL_PLANE);
+    seg.setMethodType(pcl::SAC_RANSAC);
+    seg.setMaxIterations(100);
+    seg.setDistanceThreshold(0.2);
+
+    pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>());
+    //----------------------对背景聚类---------------------------------------------------------------也可以考虑先下采样再聚类？
+    tree->setInputCloud(cloud_background);
+
+    std::vector<pcl::PointIndices> cluster_indices;
+    pcl::EuclideanClusterExtraction<PointT> ec;
+    ec.setClusterTolerance(0.5);
+    ec.setMinClusterSize(300);
+    ec.setMaxClusterSize(20000);
+    ec.setSearchMethod(tree);
+    ec.setInputCloud(cloud_background);
+    ec.extract(cluster_indices);
+
+    if (cluster_indices.size() == 0)
+    {
+        std::cout << "cluster_indices.size()==0" << std::endl;
+    }
+
+    //--------------------遍历聚类，每个聚类中找出一个平面，并用平面对矩形区域作修复---------------------------------
+    for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
+    {
+        pcl::PointCloud<PointT>::Ptr cloud_cluster(new pcl::PointCloud<PointT>);
+        for (const auto &idx : it->indices)
+            cloud_cluster->push_back((*cloud_background)[idx]);
+        cloud_cluster->width = cloud_cluster->size();
+        cloud_cluster->height = 1;
+        cloud_cluster->is_dense = true;
+
+        //---- Segment the largest planar component from the remaining cloud---------------
+        seg.setInputCloud(cloud_cluster);
+        seg.segment(*inliers, *coefficients);
+
+        if (dimension == 2)
+            back_plane_fix_2D(cloud_cluster, inliers);
+        else if (dimension == 3)
+            back_plane_fix(cloud_cluster, inliers, coefficients);
+        else
+        {
+            std::cout << "This dimension is not right!" << std::endl;
+            break;
+        }
+        //一个背景平面结束，背景平面序号加一
+        vp_no++;
+    }
+}
+
+/*
+    对一个背景平面进行深度填充(点云层面、原深度图层面)
+    [IN] 欧几里德聚类分割出的背景平面
+    [OUT] Depth 根据所在平面系数将其矩形区域修复填充
+    @param cloud_cluster: 欧几里德聚类得到的一个聚类
+    @param inliers: 聚类中平面内点的索引，根据内点计算出矩形区域
+    @param coefficients: 该聚类内平面的系数，用于进行深度数据修复，在拟合平面上进行填充。
+*/
+void DepthDetect::back_plane_fix(pcl::PointCloud<PointT>::Ptr cloud_cluster, pcl::PointIndices::Ptr inliers, pcl::ModelCoefficients::Ptr coefficients)
+{
+
+    ObjectWindow object_window;
+    float A, B, C, D;
+    A = coefficients->values[0];
+    B = coefficients->values[1];
+    C = coefficients->values[2];
+    D = coefficients->values[3];
+
+    // std::cout << "Model: " << A << ", " << B << ", " << C << "," << D << std::endl;
+
+    //从聚类中提取出平面上的点,计算窗口
+    for (const auto &idx : inliers->indices)
+    {
+        PointT border_point = (*cloud_cluster)[idx];
+        object_window.add_point(border_point);
+    }
+
+    object_window.update();
+    // object_window.output();
+    // object_window.draw(Depth);
+    // cv::imshow("window", Depth);
+    // cv::waitKey();
+
+    //遍历区域，将所有矩形区域内深度修复,平面方程Ax+By+Cz+D=0->z
+    //行遍历,即使并行效率也没有明显提高，该部分应该耗时不大
+    for (int r = object_window.topleft_x; r < object_window.topleft_x + object_window.height; r++)
+    {
+        //列遍历
+        for (int c = object_window.topleft_y; c < object_window.topleft_y + object_window.width; c++)
+        {
+            if (Mask.at<uchar>(r, c) == 1 && Depth.at<float>(r, c) == 0) //是空洞点
+            {
+                //------------根据模型计算它的值
+                float z = -D * constant * 1000. / (A * r + B * c + C * constant);
+                // std::cout<<r<<","<<c<<","<<z<<std::endl;
+                Depth.at<float>(r, c) = z;
+            }
+            else if (Mask.at<uchar>(r, c) == 1) //已经被填充过的空洞点,优先填充为深的
+            {
+                float z = -D * constant * 1000. / (A * r + B * c + C * constant);
+                if (z > Depth.at<float>(r, c))
+                {
+                    Depth.at<float>(r, c) = z;
+                }
+            }
+        }
+    }
+    // cv::imshow("fix_depth", Depth);
+    // cv::waitKey();
+}
+
+/*
+    对一个背景平面进行分割
+    [IN] 欧几里德聚类分割出的背景平面
+    [OUT] seg_image 根据所在平面序号填充 seg_image
+    @param cloud_cluster: 欧几里德聚类得到的一个聚类
+    @param inliers: 聚类中平面内点的索引，根据内点计算出矩形区域
+*/
+void DepthDetect::back_plane_fix_2D(pcl::PointCloud<PointT>::Ptr cloud_cluster, pcl::PointIndices::Ptr inliers)
+{
+    ObjectWindow object_window;
+    float min_depth = FLT_MAX;
+    //从聚类中提取出平面上的点,计算窗口
+    for (const auto &idx : inliers->indices)
+    {
+        PointT border_point = (*cloud_cluster)[idx];
+        object_window.add_point(border_point);
+        //维护一个平面序号对应的深度，从而实现距离深度优先，以聚类内最浅为标准
+        if (border_point.z < min_depth)
+            min_depth = border_point.z;
+    }
+    object_window.update();
+    min_depths.push_back(min_depth);
+
+    //遍历区域，将所有矩形区域内
+    //行遍历,即使并行效率也没有明显提高，该部分应该耗时不大
+    for (int r = object_window.topleft_x; r < object_window.topleft_x + object_window.height; r++)
+    {
+        //列遍历
+        for (int c = object_window.topleft_y; c < object_window.topleft_y + object_window.width; c++)
+        {
+            if (seg_image.at<uchar>(r, c) == 0) //未被填充过
+            {
+                seg_image.at<uchar>(r, c) = vp_no;
+            }
+            else //已经被填充过,优先填充为深的
+            {
+                if (min_depth > min_depths[seg_image.at<uchar>(r, c) - vp_start_no]) //当前平面的深度较大
+                    seg_image.at<uchar>(r, c) = vp_no;
+            }
+        }
+    }
 }
 
 /*
@@ -32,7 +248,7 @@ ForeGround::ForeGround(pcl::PointCloud<PointT>::Ptr _cloud_foreground, float for
     [out]  plane_coes   将各平面系数写入vector plane_coes
     [out]  plane_border_clouds  将各平面边界内点集写入vector plane_border_clouds
 */
-void ForeGround::planar_seg()
+void DepthDetect::planar_seg()
 {
     // 记录起始的时钟周期数
     double time = (double)cv::getTickCount();
@@ -50,7 +266,7 @@ void ForeGround::planar_seg()
 
     //用于暂存竖直面
     pcl::PointCloud<PointT>::Ptr cloud_vps(new pcl::PointCloud<PointT>());
-    //遍历平面，按照阈值分割出若干平面，需要法线辨别，法线可以从平面系数计算，平面法向量：(A,B,C)。目的:找出支撑面识别并去除
+    //平面遍历，按照阈值分割出若干平面，需要法线辨别，法线可以从平面系数计算，平面法向量：(A,B,C)。目的:找出支撑面识别并去除
     for (int i = 0;; i++)
     {
         seg.setInputCloud(cloud_foreground);
@@ -96,7 +312,7 @@ void ForeGround::planar_seg()
             extract.setNegative(true);
             extract.filter(*cloud_foreground);
 
-            //----------euclidean cluster extraction------------------------
+            //----------euclidean cluster extraction,相同高度可能存在多个平面，对同高度平面聚类分割不同平面------------------------
             //最好还是每次创建，如果多次重用同一个会导致未知问题，可能是没有回收，目前每次循环创建也可以，但不能保证更多的面不出问题。
             pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>());
             std::vector<pcl::PointIndices> cluster_indices;
@@ -111,7 +327,6 @@ void ForeGround::planar_seg()
             std::cout << "cluster_indices.size() = " << cluster_indices.size() << std::endl;
 
             //--------------------遍历平面聚类，存储平面聚类点云、平面聚类参数、平面聚类边界点云，平面聚类分割结果---------------------------------
-            int j = 0; //即使并行效率也没有明显提升,计算瓶颈不在这里。
             for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
             {
                 //如果聚类过小，比较可能是远处其他垂直面的一部分，将其返还给剩余点云
@@ -131,7 +346,7 @@ void ForeGround::planar_seg()
                     cloud_cluster->height = 1;
                     cloud_cluster->is_dense = true;
 
-                    //遍历
+                    //遍历,某高度平面内的一个独立平面的内点，不存在写冲突，即使已被写过，前景的优先级更高
                     for (auto &point : *cloud_cluster)
                     {
                         int r = point.x * constant / point.z; // grid_x = x * constant / depth
@@ -144,8 +359,6 @@ void ForeGround::planar_seg()
                     plane_border_clouds.push_back(*extract_border(cloud_cluster));
                     plane_clouds.push_back(*cloud_cluster);
                     plane_coes.push_back(*coefficients);
-
-                    j++;
                 }
             }
         }
@@ -172,7 +385,7 @@ void ForeGround::planar_seg()
     //将竖面返回给剩余点云
     for (auto &point : *cloud_vps)
         cloud_foreground->push_back(point);
-    std::cout << "Return cloud_vps to foreground , num: " << cloud_vps->size() << std::endl
+    std::cout << "Return it to foreground , num: " << cloud_vps->size() << std::endl
               << std::endl;
 
     // 计算时间差
@@ -186,13 +399,13 @@ void ForeGround::planar_seg()
     @param n:   一个方向上一端提取点的数量
     @return  提取出来的边界点。
 */
-pcl::PointCloud<PointT>::Ptr ForeGround::extract_border(pcl::PointCloud<PointT>::Ptr cloud_cluster, int n)
+pcl::PointCloud<PointT>::Ptr DepthDetect::extract_border(pcl::PointCloud<PointT>::Ptr cloud_cluster, int n)
 {
     // 记录起始的时钟周期数
     double time = (double)cv::getTickCount();
 
     pcl::PointCloud<PointT>::Ptr cloud_border(new pcl::PointCloud<PointT>);
-    cv::Mat map = cv::Mat::zeros(480, 640, CV_32F);
+    cv::Mat map = cv::Mat::zeros(height, width, CV_32F);
 
     int count = 0;
     //形成映射图像，便于边界提取
@@ -285,13 +498,13 @@ pcl::PointCloud<PointT>::Ptr ForeGround::extract_border(pcl::PointCloud<PointT>:
     @param n:   一个方向上一端提取点的数量
     @return 二维的边界点，是图像上的点，用于opencv拟合
 */
-std::vector<cv::Point> ForeGround::extract_border_2D(pcl::PointCloud<PointT> cloud_cluster, int n)
+std::vector<cv::Point> DepthDetect::extract_border_2D(pcl::PointCloud<PointT> cloud_cluster, int n)
 {
     // 记录起始的时钟周期数
     double time = (double)cv::getTickCount();
 
     std::vector<cv::Point> border_points;
-    cv::Mat map = cv::Mat::zeros(480, 640, CV_8U);
+    cv::Mat map = cv::Mat::zeros(height, width, CV_8U);
 
     //形成映射图像，便于边界提取
     for (auto &point : cloud_cluster)
@@ -369,7 +582,7 @@ std::vector<cv::Point> ForeGround::extract_border_2D(pcl::PointCloud<PointT> clo
     [in]: cloud_foreground,前景点云，此时为去除平面垂面后的前景点云的剩余点云
     [out]: write object serial number on "seg_image", which is a Mat storing segmentation result
 */
-void ForeGround::object_detect_2D_bak()
+void DepthDetect::object_detect_2D_bak()
 {
     // 记录起始的时钟周期数
     double time = (double)cv::getTickCount();
@@ -432,7 +645,7 @@ void ForeGround::object_detect_2D_bak()
     [out] seg_image: 将支撑面完善成桌子等具体物体。
     将桌子完整化，将桌子纯净边缘点加入剩余点云进行聚类，桌子边缘点所在聚类加入桌子。其他独立物体为聚类。
 */
-void ForeGround::object_detect_2D()
+void DepthDetect::object_detect_2D()
 {
     // 记录起始的时钟周期数
     double time = (double)cv::getTickCount();
@@ -547,7 +760,7 @@ void ForeGround::object_detect_2D()
     [in] plane_border_clouds
     [out] cloud_pure_border
 */
-void ForeGround::border_clean()
+void DepthDetect::border_clean()
 {
     // 记录起始的时钟周期数
     double time = (double)cv::getTickCount();
@@ -584,12 +797,12 @@ void ForeGround::border_clean()
     std::cout << "border_clean 运行时间: " << time << "秒\n";
 }
 /*
-    @brief 此前应先尝试拟合椭圆，不是椭圆则认为是多边形，从边界点中拟合出若干满足阈值的线段。
+    此前应先尝试拟合椭圆，不是椭圆则认为是多边形，从边界点中拟合出若干满足阈值的线段。
+    [out] 将线段内点作为纯净边界点组合存储进plane_pure_border_clouds
     @param border_cloud: 边界点集合(非纯净的)
     @param plane_no: 用于保存中间点云数据(拟合出的直线内点)
-    @param [out] 将线段内点作为纯净边界点组合存储进plane_pure_border_clouds
 */
-void ForeGround::lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, int plane_no)
+void DepthDetect::lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, int plane_no)
 {
     //阈值设置-------------------后续可能作为参数输入？
     float line_dis_threshold = 0.05; //前景精度较高，距离阈值应当合理控制,但不能过小，否则相当一部分会无法识别
@@ -650,45 +863,12 @@ void ForeGround::lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, int plane_
     }
 }
 
-void fg_store_code()
-{
-    // std::stringstream ss;
-    // ss << "cloud_cluster_" << i << "_" << j << ".pcd";
-    // pcl::io::savePCDFile(ss.str(), *cloud_cluster);
-    // std::stringstream ss1;
-    // ss1 << "cloud_border_" << i << "_"<< j << ".pcd";
-    // pcl::io::savePCDFile(ss1.str(), *extract_border(cloud_cluster));
-
-    // //------------先拟合圆形-------------------
-    // pcl::SACSegmentation<PointT> cir_seg;
-    // pcl::PointIndices::Ptr cir_inliers(new pcl::PointIndices);
-    // pcl::ModelCoefficients::Ptr cir_coefficients(new pcl::ModelCoefficients);
-    // pcl::PointCloud<PointT>::Ptr cir_cloud_plane(new pcl::PointCloud<PointT>());
-
-    // cir_seg.setOptimizeCoefficients(true);
-    // cir_seg.setModelType(pcl::SACMODEL_CIRCLE3D);
-    // cir_seg.setMethodType(pcl::SAC_RANSAC);
-    // cir_seg.setMaxIterations(100);
-    // cir_seg.setDistanceThreshold(circle_dis_threshold); //前景精度较高，计算圆的距离阈值应当合理控制,但不能过小，否则相当一部分会无法识别
-    // cir_seg.setInputCloud(border_cloud);
-    // cir_seg.segment(*cir_inliers, *cir_coefficients);
-
-    // //绘制拟合椭圆
-    // cv::ellipse(binary_image, ellipse_rect, cv::Scalar(200), 1, 8);
-    // cv::imshow("fitEllipse", binary_image);
-    // while (true)
-    // {
-    //     if (cv::waitKey(30) == 27) //延时30ms,播放期间按下esc按键则退出，并返回键值
-    //         break;
-    // }
-}
-
 /*
     @brief opencv二维角度拟合椭圆,[out]:如果成功将纯净内点组合存入plane_pure_border_clouds
     @param border_cloud: 边界点集合(非纯净的)
     @return 是否成功拟合椭圆。
 */
-bool ForeGround::ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud)
+bool DepthDetect::ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud)
 {
     float dis_threshold = 3.0f;                                     //用于判断是否内点，两点之间的距离
     float fit_threshold_percent = 0.5f;                             //内点数是否达标阈值百分比。
@@ -698,7 +878,7 @@ bool ForeGround::ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud)
 
     //将边界点转化为二维二值图像，便于二维拟合
     std::vector<cv::Point> border_points;
-    // cv::Mat binary_image = cv::Mat::zeros(480, 640, CV_8U);
+    // cv::Mat binary_image = cv::Mat::zeros(height, width, CV_8U);
 
     for (auto &point : *border_cloud)
     {
@@ -788,7 +968,7 @@ bool ForeGround::ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud)
     @param p: 当前需计算距离点
     @return 椭圆上距离当前计算点最近的点
 */
-cv::Point2f ForeGround::get_ellipse_nearest_point(float semi_major, float semi_minor, cv::Point2f p)
+cv::Point2f DepthDetect::get_ellipse_nearest_point(float semi_major, float semi_minor, cv::Point2f p)
 {
     //在尖端会受到影响,选择在第一象限进行计算，最终返回时加上符号
     float px = std::abs(p.x);
