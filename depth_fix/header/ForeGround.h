@@ -35,14 +35,12 @@ public:
     
 
 private:
-    int hp_start_no=200;
-    int vp_start_no=50;
-    int object_start_no=100;
+    int hp_start_no=1;
+    int object_start_no=50;
 
     float max_D = 0.0f; //最远平面距离，平面系数里的D
     float constant = 570.3;
     int hp_no;           // horizontal plane num, 水平面的索引
-    int vp_no;       //垂直面的索引
     int object_no;   //检测出的物体索引
     int fore_seg_threshold; //水平面点数量阈值
 

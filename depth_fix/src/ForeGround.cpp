@@ -21,7 +21,6 @@ ForeGround::ForeGround(pcl::PointCloud<PointT>::Ptr _cloud_foreground, float for
     cloud_foreground = _cloud_foreground;
     fore_seg_threshold = fore_seg_threshold_percent * cloud_foreground->size();
     hp_no = hp_start_no;
-    vp_no = vp_start_no;
     object_no = object_start_no;
 }
 
