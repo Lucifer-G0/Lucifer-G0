@@ -42,6 +42,7 @@ public:
     std::vector<pcl::PointCloud<PointT>> plane_clouds;             //存储识别出来的独立水平面
     std::vector<pcl::PointCloud<PointT>> plane_border_clouds;      //存储识别出来的独立水平面的边缘
     std::vector<pcl::PointCloud<PointT>> plane_pure_border_clouds; //存储识别出来的独立水平面的纯净边缘，不包含因为遮挡造成的。
+    pcl::PointCloud<PointT>::Ptr ground_cloud;             //暂存/存储识别出来的地面,可能会出现更远的面成为地面
 
     void planar_seg();
     pcl::PointCloud<PointT>::Ptr extract_border(pcl::PointCloud<PointT>::Ptr cloud_cluster, int n = 3);
@@ -54,13 +55,16 @@ public:
     void object_detect();
     void object_detect_2D();
     void shape_fit();
+    cv::Mat get_color_seg();
 
 private:
     float max_D = 0.0f;     //最远平面距离，平面系数里的D
-    std::vector<int> ground_cluster_idxs;   //存入的是属于地面平面聚类的hp_no.
+    int ground_no=255;
+    bool ground_is_stored=false;//表示ground_cloud内是否存有平面。
     int hp_no;              // horizontal plane num, 水平面的索引
     int object_no;          //检测出的物体索引
     int fore_seg_threshold; //水平面点数量阈值
+    
 
     std::vector<pcl::ModelCoefficients> plane_coes; //存储识别出的独立水平面的参数
     cv::Point2f get_ellipse_nearest_point(float semi_major, float semi_minor, cv::Point2f p);

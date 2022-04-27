@@ -7,47 +7,24 @@
 #include <pcl/filters/passthrough.h>
 
 #include "DepthDetect.h"
-#include "MyColor.hpp"
+
+#include <pcl/console/time.h>
 
 int main()
 {
+	pcl::console::TicToc tt;
+	tt.tic();
+
 	DepthDetect dd;
 	dd.back_cluster_extract();
 	dd.planar_seg();
 	dd.border_clean();
 	dd.object_detect_2D();
 
-	MyColor my_color;
-
-	cv::Mat color_seg(480,640,CV_8UC3);
-	for(int r=0;r<480;r++)
-	{
-		for(int c=0;c<640;c++)
-		{
-			int seg_no=dd.seg_image.at<uchar>(r,c);
-			if(seg_no==0)
-			{
-				color_seg.at<cv::Vec3b>(r,c) = my_color.hole_color;
-			}
-			else if(seg_no>=dd.vp_start_no)
-			{
-				color_seg.at<cv::Vec3b>(r,c) = my_color.back_colors[seg_no-dd.vp_start_no];
-			}
-			else if(seg_no>=dd.object_start_no)
-			{
-				color_seg.at<cv::Vec3b>(r,c) = my_color.object_colors[((seg_no-dd.object_start_no)*7)%my_color.oc_size];	//对序号做变换实现相邻序号物体较大颜色跨度。
-			}
-			else if(seg_no>=dd.hp_start_no)
-			{
-				color_seg.at<cv::Vec3b>(r,c) = my_color.plane_colors[seg_no-dd.hp_start_no];
-			}
-			
-		}
-	}
-
+	std::cout << "[done, " << tt.toc () << " ms ]" << std::endl;
 
 	// cv::applyColorMap(dd.seg_image, color, cv::COLORMAP_HSV);
-	cv::imshow("object_detect_2D", color_seg);
+	cv::imshow("object_detect_2D", dd.get_color_seg());
 	while (cv::waitKey(100) != 27)
 	{
 		if (cv::getWindowProperty("object_detect_2D", 0) == -1) //处理手动点击叉号关闭退出，报错退出，只能放在结尾

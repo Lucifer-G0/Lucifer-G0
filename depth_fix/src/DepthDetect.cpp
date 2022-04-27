@@ -15,7 +15,42 @@
 #include "DepthDetect.h"
 #include "ObjectWindow.h"
 #include "transform.h"
+#include "MyColor.hpp"
 
+cv::Mat DepthDetect::get_color_seg()
+{
+    MyColor my_color;
+	cv::Mat color_seg(480,640,CV_8UC3);
+	for(int r=0;r<480;r++)
+	{
+		for(int c=0;c<640;c++)
+		{
+			int seg_no= seg_image.at<uchar>(r,c);
+			if(seg_no==0)
+			{
+				color_seg.at<cv::Vec3b>(r,c) = my_color.hole_color;
+			}
+			else if(seg_no==255)
+			{
+				color_seg.at<cv::Vec3b>(r,c) = my_color.ground_color;
+			}
+			else if(seg_no>= vp_start_no)
+			{
+				color_seg.at<cv::Vec3b>(r,c) = my_color.back_colors[seg_no- vp_start_no];
+			}
+			else if(seg_no>= object_start_no)
+			{
+				color_seg.at<cv::Vec3b>(r,c) = my_color.object_colors[((seg_no- object_start_no)*7)%my_color.oc_size];	//对序号做变换实现相邻序号物体较大颜色跨度。
+			}
+			else if(seg_no>= hp_start_no)
+			{
+				color_seg.at<cv::Vec3b>(r,c) = my_color.plane_colors[seg_no- hp_start_no];
+			}
+			
+		}
+	}
+    return color_seg;
+}
 DepthDetect::DepthDetect(int dimension)
 {
     // 有些可以作为参数输入。
@@ -299,14 +334,6 @@ void DepthDetect::planar_seg()
         {
             std::cout << "A>=0.5. This is a horizontal plane!" << std::endl;
 
-            bool is_ground = false;
-            if (abs(D) > max_D)
-            {
-                max_D = abs(D);
-                is_ground = true;
-                ground_cluster_idxs.clear();
-                std::cout << "This is ground: plane " << i << std::endl;
-            }
             // Extract the planar inliers from the input cloud
             pcl::PointCloud<PointT>::Ptr cloud_plane(new pcl::PointCloud<PointT>());
 
@@ -314,6 +341,25 @@ void DepthDetect::planar_seg()
             extract.setNegative(false);
             extract.filter(*cloud_plane);
             std::cout << "PointCloud representing the planar component: " << cloud_plane->size() << " data points." << std::endl;
+
+            if (abs(D) > max_D) //如果怀疑是地面，那就把整个平面暂存。如果有新的到来，把老的拿出来，新的存进去。
+            {
+                std::cout << "update ground: plane " << i << std::endl;
+                max_D = abs(D);
+                if (ground_is_stored)
+                {
+                    pcl::PointCloud<PointT>::Ptr cloud_plane_g(new pcl::PointCloud<PointT>());
+                    cloud_plane_g = ground_cloud;
+                    ground_cloud = cloud_plane;
+                    cloud_plane = cloud_plane_g;
+                }
+                else
+                {
+                    ground_cloud = cloud_plane; //没有暂存，暂存该平面并跳过该平面的处理
+                    ground_is_stored = true;
+                    continue;
+                }
+            }
 
             std::stringstream ss0;
             ss0 << "cloud_plane_" << i << ".pcd";
@@ -357,6 +403,7 @@ void DepthDetect::planar_seg()
                     cloud_cluster->height = 1;
                     cloud_cluster->is_dense = true;
 
+                    std::cout << "This cluster is  not ground,  store plane " << hp_no << std::endl;
                     //遍历,某高度平面内的一个独立平面的内点，不存在写冲突，即使已被写过，前景的优先级更高
                     for (auto &point : *cloud_cluster)
                     {
@@ -367,14 +414,11 @@ void DepthDetect::planar_seg()
                     std::stringstream ss1;
                     ss1 << "cloud_plane_" << i << "cluster_" << hp_no << ".pcd";
                     pcl::io::savePCDFile(ss1.str(), *cloud_cluster);
-                    //一个物体处理结束,序号加一
-                    if (is_ground)
-                        ground_cluster_idxs.push_back(hp_no); //是地面，将序号暂存，避免不是最终平面，同时可以最终进行查找。
-                    hp_no++;
 
                     plane_border_clouds.push_back(*extract_border(cloud_cluster));
                     plane_clouds.push_back(*cloud_cluster);
-                    plane_coes.push_back(*coefficients);
+                    // plane_coes.push_back(*coefficients);
+                    hp_no++; //存入了新的平面聚类,平面序号加一
                 }
                 std::cout << std::endl;
             }
@@ -398,19 +442,15 @@ void DepthDetect::planar_seg()
             extract.filter(*cloud_foreground);
         }
     }
-    //平面遍历完毕，此时地面已经找出，属于地面的hp_no被存入ground_cluster_idxs,将其序号(颜色)统一,最好移出平面数据。
-    for(int r=0;r<seg_image.rows;r++)
+    //平面聚类识别结束，非地面平面聚类存入数据，平面仍在暂存中，将平面画到图上。
+    if (ground_is_stored) //如果暂存非空，将暂存存入一般平面、边界
     {
-        for(int c=0;c<seg_image.cols;c++)
+        std::cout << "平面聚类识别结束，非地面平面聚类存入数据，平面仍在暂存中，将平面画到图上。" << std::endl;
+        for (auto &point : *ground_cloud)
         {
-            for(uchar idx : ground_cluster_idxs)
-            {
-                if(seg_image.at<uchar>(r,c)==idx)
-                {
-                    seg_image.at<uchar>(r,c)=ground_cluster_idxs[0];
-                }
-            }
-            
+            int r = round(point.x * constant / point.z); // grid_x = x * constant / depth
+            int c = round(point.y * constant / point.z); //使用round实现四舍五入的float转int,默认的float转int只取整数位。
+            seg_image.at<uchar>(r, c) = ground_no;
         }
     }
     //将竖面返回给剩余点云
@@ -786,7 +826,7 @@ void DepthDetect::object_detect_2D()
 }
 
 /*
-    净化识别出的平面的边界，通过拟合常见边界剔除因为遮挡造成的边界，目的在于使桌面桌腿连接，物体不因为与边界点相连而被归为平面
+    净化识别出的平面的边界(不含地面)，通过拟合常见边界剔除因为遮挡造成的边界，目的在于使桌面桌腿连接，物体不因为与边界点相连而被归为平面
     [in] plane_border_clouds,只读不写
     [out] cloud_pure_border
 */
@@ -862,7 +902,7 @@ void DepthDetect::lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, int plane
 
         if (line_inliers->indices.size() < border_point_num * line_threshold_percent)
         {
-            std::cout << "This line is too small!" << std::endl; //如果直接就是这一步，那么没有经历提取自然不用返回。边界并没有一一对应关系。只控制一个平面最多一个纯净边界。
+            std::cout << "This line is too small!" << std::endl; //如果直接就是这一步，那么没有经历提取自然不用返回。边界并有一一对应关系。一个平面最多一个纯净边界，没有也算个数。。
             std::cout << "push_back " << cloud_pure_border->size() << " points to plane_pure_border_clouds" << std::endl;
             plane_pure_border_clouds.push_back(*cloud_pure_border);
             break;
