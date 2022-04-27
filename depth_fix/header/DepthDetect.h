@@ -57,6 +57,7 @@ public:
 
 private:
     float max_D = 0.0f;     //最远平面距离，平面系数里的D
+    std::vector<int> ground_cluster_idxs;   //存入的是属于地面平面聚类的hp_no.
     int hp_no;              // horizontal plane num, 水平面的索引
     int object_no;          //检测出的物体索引
     int fore_seg_threshold; //水平面点数量阈值

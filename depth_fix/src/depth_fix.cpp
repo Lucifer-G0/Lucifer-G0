@@ -54,15 +54,6 @@ int main()
 			break;
 	}
 
-	// dd.border_clean();
-	// dd.object_detect_2D();
-
-	// cv::imshow("object_detect_2D",fore.seg_image);
-	// while (cv::waitKey(100) != 27)
-	// {
-	// 	if(cv::getWindowProperty("object_detect_2D",0) == -1)//处理手动点击叉号关闭退出，报错退出，只能放在结尾
-	// 		break;
-	// }
 	return 0;
 }
 
