@@ -17,40 +17,6 @@
 #include "transform.h"
 #include "MyColor.hpp"
 
-cv::Mat DepthDetect::get_color_seg()
-{
-    MyColor my_color;
-	cv::Mat color_seg(480,640,CV_8UC3);
-	for(int r=0;r<480;r++)
-	{
-		for(int c=0;c<640;c++)
-		{
-			int seg_no= seg_image.at<uchar>(r,c);
-			if(seg_no==0)
-			{
-				color_seg.at<cv::Vec3b>(r,c) = my_color.hole_color;
-			}
-			else if(seg_no==255)
-			{
-				color_seg.at<cv::Vec3b>(r,c) = my_color.ground_color;
-			}
-			else if(seg_no>= vp_start_no)
-			{
-				color_seg.at<cv::Vec3b>(r,c) = my_color.back_colors[seg_no- vp_start_no];
-			}
-			else if(seg_no>= object_start_no)
-			{
-				color_seg.at<cv::Vec3b>(r,c) = my_color.object_colors[((seg_no- object_start_no)*7)%my_color.oc_size];	//对序号做变换实现相邻序号物体较大颜色跨度。
-			}
-			else if(seg_no>= hp_start_no)
-			{
-				color_seg.at<cv::Vec3b>(r,c) = my_color.plane_colors[seg_no- hp_start_no];
-			}
-			
-		}
-	}
-    return color_seg;
-}
 DepthDetect::DepthDetect(int dimension)
 {
     // 有些可以作为参数输入。
@@ -108,6 +74,41 @@ DepthDetect::DepthDetect(int dimension)
     object_no = object_start_no;
     vp_no = vp_start_no;
 }
+
+cv::Mat DepthDetect::get_color_seg()
+{
+    MyColor my_color;
+    cv::Mat color_seg(480, 640, CV_8UC3);
+    for (int r = 0; r < 480; r++)
+    {
+        for (int c = 0; c < 640; c++)
+        {
+            int seg_no = seg_image.at<uchar>(r, c);
+            if (seg_no == 0)
+            {
+                color_seg.at<cv::Vec3b>(r, c) = my_color.hole_color;
+            }
+            else if (seg_no == 255)
+            {
+                color_seg.at<cv::Vec3b>(r, c) = my_color.ground_color;
+            }
+            else if (seg_no >= vp_start_no)
+            {
+                color_seg.at<cv::Vec3b>(r, c) = my_color.back_colors[seg_no - vp_start_no];
+            }
+            else if (seg_no >= object_start_no)
+            {
+                color_seg.at<cv::Vec3b>(r, c) = my_color.object_colors[((seg_no - object_start_no) * 7) % my_color.oc_size]; //对序号做变换实现相邻序号物体较大颜色跨度。
+            }
+            else if (seg_no >= hp_start_no)
+            {
+                color_seg.at<cv::Vec3b>(r, c) = my_color.plane_colors[seg_no - hp_start_no];
+            }
+        }
+    }
+    return color_seg;
+}
+
 
 /*
     背景数据精度较低，比较杂乱，缺失较大，但总体上其位置分布相对集中，先聚类，然后采用较大的阈值在每个聚类内拟合出一个平面。
@@ -301,7 +302,7 @@ void DepthDetect::planar_seg()
     seg.setModelType(pcl::SACMODEL_PLANE);
     seg.setMethodType(pcl::SAC_RANSAC);
     seg.setMaxIterations(100);
-    seg.setDistanceThreshold(0.1); //前景精度较高，计算平面的距离阈值应当合理控制,但不能过小，否则相当一部分会作为杂质残留，影响后续质量
+    seg.setDistanceThreshold(0.13); //前景精度较高，计算平面的距离阈值应当合理控制,但不能过小，否则相当一部分会作为杂质残留，影响后续质量
 
     //用于暂存竖直面
     pcl::PointCloud<PointT>::Ptr cloud_vps(new pcl::PointCloud<PointT>());
@@ -827,10 +828,11 @@ void DepthDetect::object_detect_2D()
 
 /*
     净化识别出的平面的边界(不含地面)，通过拟合常见边界剔除因为遮挡造成的边界，目的在于使桌面桌腿连接，物体不因为与边界点相连而被归为平面
-    [in] plane_border_clouds,只读不写
-    [out] cloud_pure_border
+    如果可以拟合成椭圆，将椭圆内点识为纯净边界。如果可以拟合出两条及以上的直线对其边界做凸包并填充。
+    [in] plane_border_clouds,只读不写   [out] cloud_pure_border
+    @param fix 是否做平面形状修复
 */
-void DepthDetect::border_clean()
+void DepthDetect::border_clean(bool fix)
 {
     // 记录起始的时钟周期数
     double time = (double)cv::getTickCount();
@@ -854,10 +856,17 @@ void DepthDetect::border_clean()
         //------------opencv二维角度拟合椭圆-------------------
         if (ellipse_fit(border_cloud))
         {
+            if(fix)
+                shape_fix(plane_no);
         }
         else
         {
-            lines_fit(border_cloud, plane_no);
+            if (lines_fit(border_cloud, plane_no) >= 2) //如果可以拟合出两条及以上的直线对其边界做凸包并填充。
+            {
+                std::cout << "this border can fit 2 or more lines" << std::endl;
+                if(fix)
+                    shape_fix(plane_no);
+            }
         }
     }
 
@@ -866,17 +875,38 @@ void DepthDetect::border_clean()
     // 输出运行时间
     std::cout << "border_clean 运行时间: " << time << "秒\n";
 }
+
+/*
+    @brief 一个平面一个边界点云，一一对应，根据序号找到对应的边界点云，对边界点做凸包并填充包围区域
+    [out] seg_image 用plane_no + hp_start_no填充seg_image
+    @param plane_no: 平面的序号，据此找到其对应的平面聚类边界点云
+*/
+void DepthDetect::shape_fix(int plane_no)
+{
+    std::vector<cv::Point> contour;
+    for (auto &point : plane_border_clouds[plane_no])
+    {
+        int r = round(point.x * constant / point.z); // grid_x = x * constant / depth
+        int c = round(point.y * constant / point.z); //使用round实现四舍五入的float转int,默认的float转int只取整数位。
+        contour.push_back(cv::Point(c, r));
+    }
+    std::vector<std::vector<cv::Point>> contours;
+    contours.push_back(contour);
+    //填充区域之前，首先采用polylines()函数，可以使填充的区域边缘更光滑
+    cv::polylines(seg_image, contours, true, cv::Scalar(plane_no + hp_start_no), 2, cv::LINE_AA); //第2个参数可以采用contour或者contours，均可
+    cv::fillPoly(seg_image, contours, cv::Scalar(plane_no + hp_start_no));                        // fillPoly函数的第二个参数是二维数组！！
+}
 /*
     此前应先尝试拟合椭圆，不是椭圆则认为是多边形，从边界点中拟合出若干满足阈值的线段。
     [out] 将线段内点作为纯净边界点组合存储进plane_pure_border_clouds
     @param border_cloud: 边界点集合(非纯净的)
     @param plane_no: 用于保存中间点云数据(拟合出的直线内点)
 */
-void DepthDetect::lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, int plane_no)
+int DepthDetect::lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, int plane_no)
 {
     //阈值设置-------------------后续可能作为参数输入？
-    float line_dis_threshold = 0.05; //前景精度较高，距离阈值应当合理控制,但不能过小，否则相当一部分会无法识别
-    float line_threshold_percent = 0.2;
+    float line_dis_threshold = 0.05;    //前景精度较高，距离阈值应当合理控制,但不能过小，否则相当一部分会无法识别
+    float line_threshold_percent = 0.2; //占总边界点数的五分之一认定为是直线
 
     int border_point_num = border_cloud->size(); // border_cloud会过滤，数目会变化，因而应当在处理前先算。
 
@@ -931,6 +961,7 @@ void DepthDetect::lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, int plane
             line_extract.filter(*border_cloud);
         }
     }
+    return line_no;
 }
 
 /*

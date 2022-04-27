@@ -48,13 +48,14 @@ public:
     pcl::PointCloud<PointT>::Ptr extract_border(pcl::PointCloud<PointT>::Ptr cloud_cluster, int n = 3);
     std::vector<cv::Point> extract_border_2D(pcl::PointCloud<PointT> cloud_cluster, int n = 3);
 
-    void border_clean();
+    void border_clean(bool fix=false);
     bool ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud);
-    void lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, int plane_no = 999);
+    int lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, int plane_no = 999);
+    void shape_fix(int plane_no);
 
     void object_detect();
     void object_detect_2D();
-    void shape_fit();
+    
     cv::Mat get_color_seg();
 
 private:
