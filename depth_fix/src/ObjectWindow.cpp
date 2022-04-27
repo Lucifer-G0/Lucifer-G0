@@ -7,10 +7,10 @@
 */
 void ObjectWindow::update()
 {
-    topleft_x=min_x;
-    topleft_y=min_y;
-    width=max_y-min_y+1;
-    height=max_x-min_x+1;
+    topleft_x = min_x;
+    topleft_y = min_y;
+    width = max_y - min_y + 1;
+    height = max_x - min_x + 1;
 }
 
 /*
@@ -18,7 +18,7 @@ void ObjectWindow::update()
 */
 void ObjectWindow::output()
 {
-    
+
     std::cout << "object_window: (" << min_x << ", " << min_y << "), " << width << ", " << height << std::endl;
 }
 
@@ -39,9 +39,9 @@ cv::Mat ObjectWindow::draw(cv::Mat image)
 */
 void ObjectWindow::add_point(pcl::PointXYZ border_point)
 {
-    cv::Point point;                                            //特征点，用以画在图像中
-    point.x = border_point.x * constant / border_point.z; // grid_x = x * constant / depth
-    point.y = border_point.y * constant / border_point.z;
+    cv::Point point;                                      //特征点，用以画在图像中
+    point.x = round(border_point.x * constant / border_point.z); // grid_x = x * constant / depth
+    point.y = round(border_point.y * constant / border_point.z); //使用round实现四舍五入的float转int,默认的float转int只取整数位。
 
     if (point.x < min_x)
     {

@@ -18,3 +18,5 @@ pcl::PointCloud<PointT>::Ptr mat2cloud(cv::Mat Depth);
 pcl::PointCloud<PointT>::Ptr passthrough_filter(pcl::PointCloud<PointT>::Ptr, bool test = false);
 
 MyCloud depth2cloud_2(std::string filename);
+
+cv::Mat depth_to_uint8(cv::Mat depth);

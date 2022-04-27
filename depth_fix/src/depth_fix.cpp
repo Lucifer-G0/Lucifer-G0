@@ -8,6 +8,7 @@
 
 #include "DepthDetect.h"
 #include "MyColor.hpp"
+
 int main()
 {
 	DepthDetect dd;

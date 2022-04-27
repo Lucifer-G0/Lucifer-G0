@@ -23,7 +23,7 @@ DepthDetect::DepthDetect(int dimension)
     float back_threshold = 0.0f;
     float max_depth = 50.0f;
     float fore_seg_threshold_percent = 0.1f; //前景分割是否平面阈值，前景点云大小的百分比
-    std::string depth_path = "00179-depth.png";
+    std::string depth_path = "00000-depth.png";
 
     Depth = cv::imread(depth_path, -1);
     Depth.convertTo(Depth, CV_32F);
@@ -40,11 +40,29 @@ DepthDetect::DepthDetect(int dimension)
 
     pcl::PointCloud<PointT>::Ptr cloud(new pcl::PointCloud<PointT>);
     cloud = depth2cloud(depth_path);
+
+    cv::Mat Depth1 = cv::Mat::zeros(Depth.rows, Depth.cols, CV_32F);
+    for (auto &point : *cloud)
+    {
+        if (point.z != 0)
+        {
+            int r = round(point.x * constant / point.z); // grid_x = x * constant / depth
+            int c = round(point.y * constant / point.z); //使用round实现四舍五入的float转int,默认的float转int只取整数位。
+            Depth1.at<float>(r, c) = point.z;
+        }
+    }
+    cv::imshow("Depth1", depth_to_uint8(Depth1));
+    cv::waitKey();
+
     //--------------计算背景的深度阈值------------------------------------------
     std::vector<float> sorted_Depth;
     for (auto &point : *cloud)
     {
-        sorted_Depth.push_back(point.z);
+        //计算阈值应该去除零点？
+        if (point.z != 0)
+        {
+            sorted_Depth.push_back(point.z);
+        }
     }
     std::sort(sorted_Depth.begin(), sorted_Depth.end());
     back_threshold = sorted_Depth[(int)(sorted_Depth.size() * back_threshold_percent)]; //根据百分比计算得到阈值
@@ -349,12 +367,12 @@ void DepthDetect::planar_seg()
                     //遍历,某高度平面内的一个独立平面的内点，不存在写冲突，即使已被写过，前景的优先级更高
                     for (auto &point : *cloud_cluster)
                     {
-                        int r = point.x * constant / point.z; // grid_x = x * constant / depth
-                        int c = point.y * constant / point.z;
+                        int r = round(point.x * constant / point.z); // grid_x = x * constant / depth
+                        int c = round(point.y * constant / point.z); //使用round实现四舍五入的float转int,默认的float转int只取整数位。
                         seg_image.at<uchar>(r, c) = hp_no;
                     }
                     std::stringstream ss1;
-                    ss1 << "cloud_plane_"<<i<<"cluster_" << hp_no << ".pcd";
+                    ss1 << "cloud_plane_" << i << "cluster_" << hp_no << ".pcd";
                     pcl::io::savePCDFile(ss1.str(), *cloud_cluster);
                     //一个物体处理结束,序号加一
                     hp_no++;
@@ -390,7 +408,7 @@ void DepthDetect::planar_seg()
         cloud_foreground->push_back(point);
     std::cout << "Return cloud_vps to foreground , num: " << cloud_vps->size() << std::endl
               << std::endl;
-    
+
     pcl::io::savePCDFile("fore_remove_support.pcd", *cloud_foreground);
 
     // 计算时间差
@@ -648,7 +666,7 @@ void DepthDetect::object_detect_2D()
     // 记录起始的时钟周期数
     double time = (double)cv::getTickCount();
 
-    double ec_dis_threshold = 0.1; //物体距离聚类，阈值应当适当小一些，独立部分较小会自动归属于附近类
+    double ec_dis_threshold = 0.25; //物体距离聚类，阈值应当适当小一些，独立部分较小会自动归属于附近类
     //-------------创建新点云，将剩余点云与桌面点云组合----------------------
     pcl::PointCloud<PointT>::Ptr cloud(new pcl::PointCloud<PointT>);
 
@@ -687,7 +705,7 @@ void DepthDetect::object_detect_2D()
 
     std::vector<pcl::PointIndices> cluster_indices;
     pcl::EuclideanClusterExtraction<PointT> ec;
-    ec.setClusterTolerance(0.1); //物体距离聚类，阈值应当适当小一些，独立部分较小会自动归属于附近类
+    ec.setClusterTolerance(ec_dis_threshold); //物体距离聚类，阈值应当适当小一些，独立部分较小会自动归属于附近类
     ec.setMinClusterSize(30);
     ec.setMaxClusterSize(200000);
     ec.setSearchMethod(tree);
@@ -730,8 +748,8 @@ void DepthDetect::object_detect_2D()
             for (const auto &idx : it->indices)
             {
                 PointT point = (*cloud)[idx];
-                int r = point.x * constant / point.z; // grid_x = x * constant / depth
-                int c = point.y * constant / point.z;
+                int r = round(point.x * constant / point.z); // grid_x = x * constant / depth
+                int c = round(point.y * constant / point.z); //使用round实现四舍五入的float转int,默认的float转int只取整数位。
                 seg_image.at<uchar>(r, c) = object_no;
             }
             //加入了一个新物体,序号加一
@@ -743,8 +761,8 @@ void DepthDetect::object_detect_2D()
             for (const auto &idx : it->indices)
             {
                 PointT point = (*cloud)[idx];
-                int r = point.x * constant / point.z; // grid_x = x * constant / depth
-                int c = point.y * constant / point.z;
+                int r = round(point.x * constant / point.z); // grid_x = x * constant / depth
+                int c = round(point.y * constant / point.z); //使用round实现四舍五入的float转int,默认的float转int只取整数位。
                 seg_image.at<uchar>(r, c) = type + hp_start_no;
             }
             std::cout << "this cluster is follow to plane " << type << std::endl;
@@ -758,8 +776,8 @@ void DepthDetect::object_detect_2D()
 }
 
 /*
-    净化识别出的平面的边界，通过拟合常见边界剔除因为遮挡造成的边界，同时可以使物体不因为与边界点相连而被归为平面
-    [in] plane_border_clouds
+    净化识别出的平面的边界，通过拟合常见边界剔除因为遮挡造成的边界，目的在于使桌面桌腿连接，物体不因为与边界点相连而被归为平面
+    [in] plane_border_clouds,只读不写
     [out] cloud_pure_border
 */
 void DepthDetect::border_clean()
@@ -789,7 +807,7 @@ void DepthDetect::border_clean()
         }
         else
         {
-            lines_fit(border_cloud,plane_no);
+            lines_fit(border_cloud, plane_no);
         }
     }
 
@@ -834,7 +852,7 @@ void DepthDetect::lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, int plane
 
         if (line_inliers->indices.size() < border_point_num * line_threshold_percent)
         {
-            std::cout << "This line is too small!" << std::endl;
+            std::cout << "This line is too small!" << std::endl; //如果直接就是这一步，那么没有经历提取自然不用返回。边界并没有一一对应关系。只控制一个平面最多一个纯净边界。
             std::cout << "push_back " << cloud_pure_border->size() << " points to plane_pure_border_clouds" << std::endl;
             plane_pure_border_clouds.push_back(*cloud_pure_border);
             break;
@@ -867,13 +885,13 @@ void DepthDetect::lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, int plane
 
 /*
     @brief opencv二维角度拟合椭圆,[out]:如果成功将纯净内点组合存入plane_pure_border_clouds
-    @param border_cloud: 边界点集合(非纯净的)
+    @param border_cloud: 边界点集合(非纯净的),只读不写
     @return 是否成功拟合椭圆。
 */
 bool DepthDetect::ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud)
 {
     float dis_threshold = 3.0f;                                     //用于判断是否内点，两点之间的距离
-    float fit_threshold_percent = 0.5f;                             //内点数是否达标阈值百分比。
+    float fit_threshold_percent = 0.4f;                             //内点数是否达标阈值百分比。
     int inliers_num = 0;                                            //输入内点的数量
     int border_point_num = border_cloud->size();                    //边界点的总数
     float fit_threshold = fit_threshold_percent * border_point_num; //内点数是否达标阈值
@@ -884,8 +902,8 @@ bool DepthDetect::ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud)
 
     for (auto &point : *border_cloud)
     {
-        int r = point.x * constant / point.z; // grid_x = x * constant / depth
-        int c = point.y * constant / point.z;
+        int r = round(point.x * constant / point.z); // grid_x = x * constant / depth
+        int c = round(point.y * constant / point.z); //使用round实现四舍五入的float转int,默认的float转int只取整数位。
         border_points.push_back(cv::Point(c, r));
         // binary_image.at<uchar>(r, c) = 100;
     }
@@ -958,7 +976,7 @@ bool DepthDetect::ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud)
     else
     {
         std::cout << "This is not a ellipse, border_point_num = " << border_point_num << "inliers_num=" << inliers_num << std::endl
-                  << std::endl;
+                  << std::endl; //没有做提取操作，自然不用返回
         return false;
     }
 }
