@@ -23,8 +23,10 @@ public:
     int vp_start_no = 200;
     cv::Mat get_Depth() { return Depth; }
     void back_plane_fix(pcl::PointCloud<PointT>::Ptr cloud, pcl::PointIndices::Ptr inliers, pcl::ModelCoefficients::Ptr coefficients);
-    void back_plane_fix_2D(pcl::PointCloud<PointT>::Ptr cloud, pcl::PointIndices::Ptr inliers);
+    void back_plane_fix_2D(pcl::PointCloud<PointT>::Ptr cloud_cluster);
+    void back_plane_fix_2D_bak(pcl::PointCloud<PointT>::Ptr cloud_cluster, pcl::PointIndices::Ptr inliers);
     void back_cluster_extract(int dimension = 2);
+    void back_cluster_extract_2D();
 
 private:
     cv::Mat Depth;                                 //深度数据

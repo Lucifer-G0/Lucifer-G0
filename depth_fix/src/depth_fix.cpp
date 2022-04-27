@@ -16,9 +16,9 @@ int main()
 	tt.tic();
 
 	DepthDetect dd;
-	dd.back_cluster_extract();
+	dd.back_cluster_extract_2D();
 	dd.planar_seg();
-	dd.border_clean();
+	dd.border_clean(true);
 	dd.object_detect_2D();
 
 	std::cout << "[done, " << tt.toc () << " ms ]" << std::endl;
