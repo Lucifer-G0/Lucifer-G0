@@ -35,7 +35,7 @@ int main()
 			}
 			else if(seg_no>=dd.object_start_no)
 			{
-				color_seg.at<cv::Vec3b>(r,c) = my_color.object_colors[seg_no-dd.object_start_no];
+				color_seg.at<cv::Vec3b>(r,c) = my_color.object_colors[((seg_no-dd.object_start_no)*7)%my_color.oc_size];	//对序号做变换实现相邻序号物体较大颜色跨度。
 			}
 			else if(seg_no>=dd.hp_start_no)
 			{
