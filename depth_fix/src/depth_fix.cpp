@@ -23,8 +23,7 @@ int main()
 
 	std::cout << "[done, " << tt.toc () << " ms ]" << std::endl;
 
-	// cv::applyColorMap(dd.seg_image, color, cv::COLORMAP_HSV);
-	cv::imshow("object_detect_2D", dd.get_color_seg());
+	cv::imshow("object_detect_2D", dd.get_color_seg_image());
 	while (cv::waitKey(100) != 27)
 	{
 		if (cv::getWindowProperty("object_detect_2D", 0) == -1) //处理手动点击叉号关闭退出，报错退出，只能放在结尾

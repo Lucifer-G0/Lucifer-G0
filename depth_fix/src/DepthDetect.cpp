@@ -17,27 +17,27 @@
 #include "transform.h"
 #include "MyColor.hpp"
 
-DepthDetect::DepthDetect(int dimension)
+/*
+    @param  dimension: (default=2),2或3,表示期待结果为2维或者3维
+    @param  back_threshold_percent: (default= 0.85f) 用于计算背景的深度阈值，百分比形式。0.85比较合适？
+    @param  fore_seg_threshold_percent: (default=0.1f)前景分割是否平面阈值，前景点云大小的百分比
+*/
+DepthDetect::DepthDetect(std::string depth_path,int dimension,float back_threshold_percent,float fore_seg_threshold_percent)
 {
-    // 有些可以作为参数输入。
-    float back_threshold_percent = 0.85f; //用于计算背景的深度阈值，百分比形式。0.85比较合适？
     float back_threshold = 0.0f;
     float max_depth = 50.0f;
-    float fore_seg_threshold_percent = 0.1f; //前景分割是否平面阈值，前景点云大小的百分比
-    std::string depth_path = "00000-depth.png";
 
     Depth = cv::imread(depth_path, -1);
     Depth.convertTo(Depth, CV_32F);
     width = Depth.cols;
     height = Depth.rows;
 
-    Mask = cv::Mat(Depth.rows, Depth.cols, CV_8U);
+    seg_image = cv::Mat::zeros(height, width, CV_8U);
+    Mask = cv::Mat::zeros(height, width, CV_8U);
     for (int r = 0; r < Depth.rows; r++)
         for (int c = 0; c < Depth.cols; c++)
             if (Depth.at<float>(r, c) == 0) //是空洞点
                 Mask.at<uchar>(r, c) = 1;
-            else
-                Mask.at<uchar>(r, c) = 0;
 
     pcl::PointCloud<PointT>::Ptr cloud(new pcl::PointCloud<PointT>);
     cloud = depth2cloud(depth_path);
@@ -73,48 +73,55 @@ DepthDetect::DepthDetect(int dimension)
     vp_no = vp_start_no;
 }
 
-cv::Mat DepthDetect::get_color_seg()
+/*
+    根据seg_image中的各种标号，制作彩色化分割结果，背景为灰色系，前景平面为紫色系，空洞为黑色，地面为紫色，其他为物体
+    [IN] seg_image
+    @return cv::Mat color_seg_image(height, width, CV_8UC3),彩色图
+*/
+cv::Mat DepthDetect::get_color_seg_image()
 {
     MyColor my_color;
-    cv::Mat color_seg(480, 640, CV_8UC3);
-    for (int r = 0; r < 480; r++)
+    cv::Mat color_seg_image(height, width, CV_8UC3);
+    for (int r = 0; r < height; r++)
     {
-        for (int c = 0; c < 640; c++)
+        for (int c = 0; c < width; c++)
         {
             int seg_no = seg_image.at<uchar>(r, c);
             if (seg_no == 0)
             {
-                color_seg.at<cv::Vec3b>(r, c) = my_color.hole_color;
+                color_seg_image.at<cv::Vec3b>(r, c) = my_color.hole_color;
             }
             else if (seg_no == 255)
             {
-                color_seg.at<cv::Vec3b>(r, c) = my_color.ground_color;
+                color_seg_image.at<cv::Vec3b>(r, c) = my_color.ground_color;
             }
             else if (seg_no >= vp_start_no)
             {
-                color_seg.at<cv::Vec3b>(r, c) = my_color.back_colors[((seg_no - vp_start_no)*3)%my_color.bc_size];
+                color_seg_image.at<cv::Vec3b>(r, c) = my_color.back_colors[((seg_no - vp_start_no)*3)%my_color.bc_size];
             }
             else if (seg_no >= object_start_no)
             {
-                color_seg.at<cv::Vec3b>(r, c) = my_color.object_colors[((seg_no - object_start_no) * 7) % my_color.oc_size]; //对序号做变换实现相邻序号物体较大颜色跨度。
+                color_seg_image.at<cv::Vec3b>(r, c) = my_color.object_colors[((seg_no - object_start_no) * 7) % my_color.oc_size]; //对序号做变换实现相邻序号物体较大颜色跨度。
             }
             else if (seg_no >= hp_start_no)
             {
-                color_seg.at<cv::Vec3b>(r, c) = my_color.plane_colors[seg_no - hp_start_no];
+                color_seg_image.at<cv::Vec3b>(r, c) = my_color.plane_colors[seg_no - hp_start_no];
             }
         }
     }
-    return color_seg;
+    return color_seg_image;
 }
 
 
 /*
-    背景数据精度较低，比较杂乱，缺失较大，但总体上其位置分布相对集中，先聚类，然后采用较大的阈值在每个聚类内拟合出一个平面。
+    矩形修复，背景数据精度较低，比较杂乱，缺失较大，但总体上其位置分布相对集中，先聚类，然后采用较大的阈值在每个聚类内拟合出一个平面。
     [IN] cloud_background: 分割出的背景点云数据。
     [OUT]: Depth 每个聚类拟合一个矩形平面，将背景的空洞修复值填充到Depth | seg_image 根据所在平面序号填充 seg_image
     @param dimension: 维度(2 or 3) 2维在seg_image矩形填充平面序号，3维对深度数据Depth进行矩形区域恢复
+    @param back_ec_dis_threshold: (default=0.5) 背景欧几里德聚类的距离阈值，背景数据精度低，相对杂乱，需要更大阈值，但不好控制
+    @param plane_seg_dis_threshold: (default=0.2) 平面分割距离阈值
 */
-void DepthDetect::back_cluster_extract(int dimension)
+void DepthDetect::back_cluster_extract(int dimension,float back_ec_dis_threshold, float plane_seg_dis_threshold)
 {
     //------------------- Create the segmentation object for the planar model and set all the parameters----------------
     pcl::SACSegmentation<PointT> seg;
@@ -126,7 +133,7 @@ void DepthDetect::back_cluster_extract(int dimension)
     seg.setModelType(pcl::SACMODEL_PLANE);
     seg.setMethodType(pcl::SAC_RANSAC);
     seg.setMaxIterations(100);
-    seg.setDistanceThreshold(0.2);
+    seg.setDistanceThreshold(plane_seg_dis_threshold);
 
     pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>());
     //----------------------对背景聚类---------------------------------------------------------------也可以考虑先下采样再聚类？
@@ -134,9 +141,9 @@ void DepthDetect::back_cluster_extract(int dimension)
 
     std::vector<pcl::PointIndices> cluster_indices;
     pcl::EuclideanClusterExtraction<PointT> ec;
-    ec.setClusterTolerance(0.5);
+    ec.setClusterTolerance(back_ec_dis_threshold);
     ec.setMinClusterSize(300);
-    ec.setMaxClusterSize(20000);
+    ec.setMaxClusterSize(cloud_background->size());
     ec.setSearchMethod(tree);
     ec.setInputCloud(cloud_background);
     ec.extract(cluster_indices);
@@ -224,8 +231,9 @@ void DepthDetect::back_plane_fix(pcl::PointCloud<PointT>::Ptr cloud_cluster, pcl
     背景数据精度较低，比较杂乱，缺失较大，但总体上其位置分布相对集中，先聚类，然后赋值。修复的时间代价较大，聚类不好控制。
     [IN] cloud_background: 分割出的背景点云数据。
     [OUT]: seg_image 根据所在平面序号填充 seg_image
+    @param back_ec_dis_threshold: (default=0.5) 背景欧几里德聚类的距离阈值，背景数据精度低，相对杂乱，需要更大阈值，但不好控制
 */
-void DepthDetect::back_cluster_extract_2D()
+void DepthDetect::back_cluster_extract_2D(float back_ec_dis_threshold)
 {
     pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>());
     //----------------------对背景聚类---------------------------------------------------------------也可以考虑先下采样再聚类？
@@ -233,9 +241,9 @@ void DepthDetect::back_cluster_extract_2D()
 
     std::vector<pcl::PointIndices> cluster_indices;
     pcl::EuclideanClusterExtraction<PointT> ec;
-    ec.setClusterTolerance(0.5);
+    ec.setClusterTolerance(back_ec_dis_threshold);
     ec.setMinClusterSize(300);
-    ec.setMaxClusterSize(200000);
+    ec.setMaxClusterSize(cloud_background->size());
     ec.setSearchMethod(tree);
     ec.setInputCloud(cloud_background);
     ec.extract(cluster_indices);
@@ -255,7 +263,7 @@ void DepthDetect::back_cluster_extract_2D()
 }
 
 /*
-    对一个背景平面进行分割
+    对一个背景平面进行修复，对边缘平滑后填充
     [IN] 欧几里德聚类分割出的背景平面
     [OUT] seg_image 根据所在平面序号填充 seg_image
     @param cloud_cluster: 欧几里德聚类得到的一个聚类
@@ -263,7 +271,6 @@ void DepthDetect::back_cluster_extract_2D()
 void DepthDetect::back_plane_fix_2D(pcl::PointCloud<PointT>::Ptr cloud_cluster)
 {
     std::vector<cv::Point> contour = extract_border_2D(*cloud_cluster);
-
     std::vector<std::vector<cv::Point>> contours;
     contours.push_back(contour);
     //填充区域之前，首先采用polylines()函数，可以使填充的区域边缘更光滑
@@ -319,10 +326,12 @@ void DepthDetect::back_plane_fix_2D_bak(pcl::PointCloud<PointT>::Ptr cloud_clust
     [in] cloud_foreground:从原始点云中按照深度阈值分割出的前景点云
     [out]  seg_image    将平面序号写入平面内点所属位置
     [out]  plane_clouds 将各平面内点集写入vector plane_clouds
-    [out]  plane_coes   将各平面系数写入vector plane_coes
+    [out]  plane_coes   将各平面系数写入vector plane_coes(暂未使用)
     [out]  plane_border_clouds  将各平面边界内点集写入vector plane_border_clouds
+    @param plane_seg_dis_threshold: (default=0.13f) 分割平面的距离阈值,前景精度较高应当合理控制,但不能过小，否则相当一部分会作为杂质残留，影响后续质量
+    @param layer_seg_dis_threshold: (default=0.3f)相同高度平面的同层分离的距离阈值(考虑相同高度多平面),目的是分割不靠近的同层平面，可以适当放宽---------------------------------此参数可能仍有待调整
 */
-void DepthDetect::planar_seg()
+void DepthDetect::planar_seg(float plane_seg_dis_threshold, float layer_seg_dis_threshold)
 {
     pcl::SACSegmentation<PointT> seg;
     pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
@@ -333,7 +342,7 @@ void DepthDetect::planar_seg()
     seg.setModelType(pcl::SACMODEL_PLANE);
     seg.setMethodType(pcl::SAC_RANSAC);
     seg.setMaxIterations(100);
-    seg.setDistanceThreshold(0.13); //前景精度较高，计算平面的距离阈值应当合理控制,但不能过小，否则相当一部分会作为杂质残留，影响后续质量
+    seg.setDistanceThreshold(plane_seg_dis_threshold); 
 
     //用于暂存竖直面
     pcl::PointCloud<PointT>::Ptr cloud_vps(new pcl::PointCloud<PointT>());
@@ -392,7 +401,7 @@ void DepthDetect::planar_seg()
             pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>());
             std::vector<pcl::PointIndices> cluster_indices;
             pcl::EuclideanClusterExtraction<PointT> ec;
-            ec.setClusterTolerance(0.3); //目的是分割不靠近的同层平面，可以适当放宽---------------------------------此参数可能仍有待调整
+            ec.setClusterTolerance(layer_seg_dis_threshold); 
             ec.setMinClusterSize(30);    //如果限制该约束，较小的聚类会自动并入大的里面，追求的效果是将其返还
             tree->setInputCloud(cloud_plane);
             ec.setSearchMethod(tree);
@@ -645,7 +654,7 @@ void DepthDetect::object_detect()
     pcl::EuclideanClusterExtraction<PointT> ec;
     ec.setClusterTolerance(0.1); //物体距离聚类，阈值应当适当小一些，独立部分较小会自动归属于附近类
     ec.setMinClusterSize(30);
-    ec.setMaxClusterSize(20000);
+    ec.setMaxClusterSize(cloud_foreground->size());
     ec.setSearchMethod(tree);
     ec.setInputCloud(cloud_foreground);
     ec.extract(cluster_indices);
@@ -669,15 +678,14 @@ void DepthDetect::object_detect()
 }
 
 /*
+    将桌子完整化，将桌子纯净边缘点加入剩余点云进行聚类，桌子边缘点所在聚类加入桌子。其他独立物体为聚类。
     [in] cloud_foreground: 去除支撑面的剩余点云
     [in] plane_pure_border_clouds
     [out] seg_image: 将支撑面完善成桌子等具体物体。
-    将桌子完整化，将桌子纯净边缘点加入剩余点云进行聚类，桌子边缘点所在聚类加入桌子。其他独立物体为聚类。
+    @param ec_dis_threshold(default=0.25) 物体距离聚类阈值,应当适当小一些，独立部分较小会自动归属于附近类
 */
-void DepthDetect::object_detect_2D()
+void DepthDetect::object_detect_2D(float ec_dis_threshold)
 {
-
-    double ec_dis_threshold = 0.25; //物体距离聚类，阈值应当适当小一些，独立部分较小会自动归属于附近类
     //-------------创建新点云，将剩余点云与桌面点云组合----------------------
     pcl::PointCloud<PointT>::Ptr cloud(new pcl::PointCloud<PointT>);
 
@@ -717,7 +725,7 @@ void DepthDetect::object_detect_2D()
     pcl::EuclideanClusterExtraction<PointT> ec;
     ec.setClusterTolerance(ec_dis_threshold); //物体距离聚类，阈值应当适当小一些，独立部分较小会自动归属于附近类
     ec.setMinClusterSize(30);
-    ec.setMaxClusterSize(200000);
+    ec.setMaxClusterSize(cloud->size());
     ec.setSearchMethod(tree);
     ec.setInputCloud(cloud);
     ec.extract(cluster_indices);
@@ -801,7 +809,7 @@ void DepthDetect::border_clean(bool fix)
         }
         else
         {
-            int num=lines_fit(border_cloud, plane_no);
+            int num=lines_fit(border_cloud);
             if (num >= 2) //如果可以拟合出两条及以上的直线对其边界做凸包并填充。
             {
                 if(fix)
@@ -836,19 +844,17 @@ void DepthDetect::shape_fix(int plane_no)
     此前应先尝试拟合椭圆，不是椭圆则认为是多边形，从边界点中拟合出若干满足阈值的线段。
     [out] 将线段内点作为纯净边界点组合存储进plane_pure_border_clouds
     @param border_cloud: 边界点集合(非纯净的)
-    @param plane_no: 用于保存中间点云数据(拟合出的直线内点)
+    @param line_threshold_percent: (default=0.2) 认定为直线的百分比阈值，默认占总边界点数的五分之一认定为是直线
+    @param line_dis_threshold: (default=0.05) 拟合直线距离阈值，前景精度较高应当合理控制,但不能过小，否则相当一部分会无法识别
+    @return line_num 该边界可以拟合出的直线的数量
 */
-int DepthDetect::lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, int plane_no)
+int DepthDetect::lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, float line_threshold_percent, float line_dis_threshold)
 {
-    //阈值设置-------------------后续可能作为参数输入？
-    float line_dis_threshold = 0.05;    //前景精度较高，距离阈值应当合理控制,但不能过小，否则相当一部分会无法识别
-    float line_threshold_percent = 0.2; //占总边界点数的五分之一认定为是直线
-
     int border_point_num = border_cloud->size(); // border_cloud会过滤，数目会变化，因而应当在处理前先算。
 
     pcl::PointCloud<PointT>::Ptr cloud_pure_border(new pcl::PointCloud<PointT>()); //用于保存纯净的边界点
 
-    int line_no = 0;
+    int line_num = 0;
     while (true)
     {
         pcl::SACSegmentation<PointT> line_seg;
@@ -885,21 +891,21 @@ int DepthDetect::lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, int plane_
             //将直线从边界点云中去除
             line_extract.setNegative(true);
             line_extract.filter(*border_cloud);
-            line_no++;
+            line_num++;
         }
     }
-    return line_no;
+    return line_num;
 }
 
 /*
     @brief opencv二维角度拟合椭圆,[out]:如果成功将纯净内点组合存入plane_pure_border_clouds
     @param border_cloud: 边界点集合(非纯净的),只读不写
+    @param fit_threshold_percent(default= 0.4f) 判断内点数是否达标的百分比阈值。
+    @param dis_threshold (= 3.0f)   两点之间的距离阈值，用于判断是否椭圆内点，小于为内点
     @return 是否成功拟合椭圆。
 */
-bool DepthDetect::ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud)
+bool DepthDetect::ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud, float fit_threshold_percent, float dis_threshold)
 {
-    float dis_threshold = 3.0f;                                     //用于判断是否内点，两点之间的距离
-    float fit_threshold_percent = 0.4f;                             //内点数是否达标阈值百分比。
     int inliers_num = 0;                                            //输入内点的数量
     int border_point_num = border_cloud->size();                    //边界点的总数
     float fit_threshold = fit_threshold_percent * border_point_num; //内点数是否达标阈值
