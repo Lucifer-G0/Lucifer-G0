@@ -20,6 +20,7 @@ int main()
 	dd.planar_seg();
 	dd.border_clean(true);
 	dd.object_detect_2D();
+	dd.object_merge();
 
 	std::cout << "[done, " << tt.toc () << " ms ]" << std::endl;
 

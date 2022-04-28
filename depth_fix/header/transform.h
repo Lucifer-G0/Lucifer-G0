@@ -1,6 +1,5 @@
 #pragma once
 #include<iostream>
-#include "MyCloud.h"
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
 
@@ -14,9 +13,5 @@ typedef pcl::PointXYZ PointT;
 pcl::PointCloud<PointT>::Ptr depth2cloud(std::string filename, bool test=false);
 
 pcl::PointCloud<PointT>::Ptr mat2cloud(cv::Mat Depth);
-
-pcl::PointCloud<PointT>::Ptr passthrough_filter(pcl::PointCloud<PointT>::Ptr, bool test = false);
-
-MyCloud depth2cloud_2(std::string filename);
 
 cv::Mat depth_to_uint8(cv::Mat depth);

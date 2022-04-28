@@ -57,6 +57,7 @@ public:
     void object_detect();
     void object_detect_2D(float ec_dis_threshold = 0.25);
 
+    void object_merge(float merge_threshold=0.8f);
     cv::Mat get_color_seg_image();
 
 private:

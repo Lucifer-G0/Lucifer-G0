@@ -9,7 +9,6 @@
 #include <pcl/point_types.h>
 #include <pcl/filters/passthrough.h>
 
-#include "MyCloud.h"
 
 typedef pcl::PointXYZ PointT;
 
@@ -210,25 +209,6 @@ pcl::PointCloud<PointT>::Ptr mat2cloud(cv::Mat Depth)
 	return cloud;
 }
 
-pcl::PointCloud<PointT>::Ptr passthrough_filter(pcl::PointCloud<PointT>::Ptr cloud, bool test)
-{
-	pcl::PassThrough<PointT> pass;
-	pcl::PointCloud<PointT>::Ptr cloud_filtered(new pcl::PointCloud<PointT>);
-
-	// Build a passthrough filter to remove spurious NaNs and scene background
-	pass.setInputCloud(cloud);
-	pass.setFilterFieldName("z");
-	pass.setFilterLimits(1, 50);
-	pass.filter(*cloud_filtered);
-	if (test)
-	{
-		std::cerr << "PointCloud after filtering has: " << cloud_filtered->size() << " data points." << std::endl;
-		pcl::io::savePCDFile("res/filtered.pcd", *cloud_filtered);
-	}
-
-	return cloud_filtered;
-}
-
 int png2video()
 {
 	cv::utils::logging::setLogLevel(utils::logging::LOG_LEVEL_SILENT); //���������־
@@ -310,49 +290,4 @@ int video_show()
 		}
 	}
 	return 0;
-}
-
-MyCloud depth2cloud_2(std::string filename)
-{
-	Mat Depth = cv::imread(filename, -1);
-	int imw = Depth.cols, imh = Depth.rows;
-	int channels = Depth.channels();
-
-	// Check whether it is a depth image.
-	if (channels != 1)
-	{
-		if (channels == 3)
-			std::cout << "this is a rgb image!" << std::endl;
-		else
-			std::cout << "channels = " << channels << std::endl;
-	}
-
-	Depth.convertTo(Depth, CV_32F);
-
-	// camera parameters
-	float constant = 570.3, MM_PER_M = 1000;
-	int change = constant * MM_PER_M;
-
-	// grid prepare
-	Mat rangeW(1, imw, CV_32F), rangeH(1, imh, CV_32F);
-	float *Wrowptr = rangeW.ptr<float>(0);
-	float *Hrowptr = rangeH.ptr<float>(0);
-	for (int i = 0; i < imw; i++)
-	{
-		Wrowptr[i] = i + 1;
-	}
-	for (int i = 0; i < imh; i++)
-	{
-		Hrowptr[i] = i + 1;
-	}
-
-	// x / gridx = depth / constant  �����ʵ��(���)�����������ı� ���� ʵ��������grid����ı�
-	Mat xgrid = Mat::ones(imh, 1, CV_32F) * rangeW;
-	Mat ygrid = rangeH.t() * Mat::ones(1, imw, CV_32F);
-
-	Mat X = xgrid.mul(Depth) / change;
-	Mat Y = ygrid.mul(Depth) / change;
-	Mat Z = Depth / MM_PER_M;
-
-	return MyCloud(X, Y, Z, imw, imh);
 }
