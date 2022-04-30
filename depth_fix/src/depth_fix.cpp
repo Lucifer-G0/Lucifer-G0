@@ -12,24 +12,37 @@
 
 int main()
 {
-	pcl::console::TicToc tt;
-	tt.tic();
+	// pcl::console::TicToc tt;
+	// tt.tic();
 
-	DepthDetect dd;
-	dd.back_cluster_extract_2D();
-	dd.planar_seg();
-	dd.border_clean(true);
-	dd.object_detect_2D();
-	dd.object_merge();
+	cv::String imagefolder = "../scene_01/*-depth.png";
+	std::vector<std::string> image_paths;
+	cv::glob(imagefolder, image_paths, false);
 
-	std::cout << "[done, " << tt.toc () << " ms ]" << std::endl;
-
-	cv::imshow("object_detect_2D", dd.get_color_seg_image());
-	while (cv::waitKey(100) != 27)
+	//并行时暂不能调用object-merge(object-merge opencv会产生莫名其妙创建错误)
+	// #pragma omp parallel for
+	for (auto image_path : image_paths)
 	{
-		if (cv::getWindowProperty("object_detect_2D", 0) == -1) //处理手动点击叉号关闭退出，报错退出，只能放在结尾
-			break;
+		int start = image_path.rfind("/"), end = image_path.rfind("-depth");
+		start = start == std::string::npos ? 0 : start + 1;
+		std::string image_no = image_path.substr(start, end - start);
+		std::cout << "depth detect: " << image_no << std::endl;
+		// std::string image_no="444";
+		// std::string image_path="../scene_01/00444-depth.png";
+
+		DepthDetect dd(image_path, 2, 0.8f);
+		dd.back_cluster_extract_2D();
+		dd.planar_seg();
+		dd.border_clean(true);
+		dd.object_detect_2D();
+		dd.object_merge();
+
+		cv::Mat color_seg_image(dd.height, dd.width, CV_8UC3,cv::Scalar(0,0,0));
+		dd.get_color_seg_image(color_seg_image);
+		cv::imwrite("../output/"+image_no+"-seg.png", color_seg_image);
+		// cv::imshow("object_detect_2D", dd.get_color_seg_image());
 	}
+
 
 	return 0;
 }

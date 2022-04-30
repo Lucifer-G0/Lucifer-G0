@@ -9,20 +9,21 @@ typedef pcl::PointXYZ PointT;
 
 class DepthDetect
 {
-// communal
+    // communal
 public:
     cv::Mat seg_image; //分割结果存储图像，默认为0,先填背景，再填前景平面，再填物体
+    int width, height;                            //输入深度图像的宽度和高度,width=cols,height=rows
     DepthDetect(std::string depth_path = "00000-depth.png", int dimension = 2, float back_threshold_percent = 0.85f, float fore_seg_threshold_percent = 0.1f);
 
 private:
-    float constant = 570.3f;              // RGBD数据集给定的相机参数，影响数据尺度
-    int width, height;                   //输入深度图像的宽度和高度,width=cols,height=rows
+    float constant = 570.3f; // RGBD数据集给定的相机参数，影响数据尺度
+
     int hp_start_no = 1, hp_no;          // horizontal plane num, 水平面的索引
     int object_start_no = 50, object_no; //检测出的物体索引
     int vp_start_no = 200, vp_no;        //背景面的索引
     int ground_no = 255;                 //地面的序号
 
-// for BackGround
+    // for BackGround
 public:
     void back_plane_fix(pcl::PointCloud<PointT>::Ptr cloud, pcl::PointIndices::Ptr inliers, pcl::ModelCoefficients::Ptr coefficients);
     void back_plane_fix_2D(pcl::PointCloud<PointT>::Ptr cloud_cluster);
@@ -37,7 +38,7 @@ private:
     cv::Mat Mask;                                  //原始是否空洞点掩码，是空洞点为1，初始化时根据图像初始化，之后仅作为(多次填充)指示而不发生变化
     std::vector<float> min_depths;                 //维护一个平面序号对应的深度，从而实现距离深度优先，以聚类内最浅为标准
 
-// for foreground
+    // for foreground
 public:
     pcl::PointCloud<PointT>::Ptr cloud_foreground;                 //前景点云，随后变成前景点云的剩余点云
     std::vector<pcl::PointCloud<PointT>> plane_clouds;             //存储识别出来的独立水平面
@@ -51,19 +52,19 @@ public:
 
     void border_clean(bool fix = false);
     bool ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud, float fit_threshold_percent = 0.4f, float dis_threshold = 3.0f);
-    int lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, float line_threshold_percent = 0.2f, float line_dis_threshold = 0.05f);
+    int lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, float line_threshold_percent = 0.2f, float line_dis_threshold = 0.05f, int plane_no = 999);
     void shape_fix(int plane_no);
 
     void object_detect();
-    void object_detect_2D(float ec_dis_threshold = 0.25);
+    void object_detect_2D(float ec_dis_threshold = 0.12f);
 
-    void object_merge(float merge_threshold=0.8f);
-    cv::Mat get_color_seg_image();
+    void object_merge(float merge_threshold = 0.8f);
+    cv::Mat get_color_seg_image(cv::Mat &color_seg_image);
 
 private:
     float max_D = 0.0f;                             //最远平面距离，平面系数里的D
     bool ground_is_stored = false;                  //表示ground_cloud内是否存有平面。
     int fore_seg_threshold;                         //水平面点数量阈值
-    std::vector<pcl::ModelCoefficients> plane_coes; //存储识别出的独立水平面的参数
+    // std::vector<pcl::ModelCoefficients> plane_coes; //存储识别出的独立水平面的参数
     cv::Point2f get_ellipse_nearest_point(float semi_major, float semi_minor, cv::Point2f p);
 };

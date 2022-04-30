@@ -33,6 +33,7 @@ DepthDetect::DepthDetect(std::string depth_path, int dimension, float back_thres
     height = Depth.rows;
 
     seg_image = cv::Mat::zeros(height, width, CV_8U);
+
     Mask = cv::Mat::zeros(height, width, CV_8U);
     for (int r = 0; r < Depth.rows; r++)
         for (int c = 0; c < Depth.cols; c++)
@@ -78,10 +79,11 @@ DepthDetect::DepthDetect(std::string depth_path, int dimension, float back_thres
     [IN] seg_image
     @return cv::Mat color_seg_image(height, width, CV_8UC3),彩色图
 */
-cv::Mat DepthDetect::get_color_seg_image()
+cv::Mat DepthDetect::get_color_seg_image(cv::Mat &color_seg_image)
 {
     MyColor my_color;
-    cv::Mat color_seg_image(height, width, CV_8UC3);
+    int rows = height, cols = width;
+
     for (int r = 0; r < height; r++)
     {
         for (int c = 0; c < width; c++)
@@ -274,7 +276,7 @@ void DepthDetect::back_plane_fix_2D(pcl::PointCloud<PointT>::Ptr cloud_cluster)
     contours.push_back(contour);
     //填充区域之前，首先采用polylines()函数，可以使填充的区域边缘更光滑,平滑会导致插值或者类似现象，平滑后会影响物体合并
     // cv::polylines(seg_image, contours, true, cv::Scalar(vp_no), 2, cv::LINE_AA); //第2个参数可以采用contour或者contours，均可
-    cv::fillPoly(seg_image, contours, cv::Scalar(vp_no));                        // fillPoly函数的第二个参数是二维数组！！
+    cv::fillPoly(seg_image, contours, cv::Scalar(vp_no)); // fillPoly函数的第二个参数是二维数组！！
 }
 
 /*
@@ -364,7 +366,7 @@ void DepthDetect::planar_seg(float plane_seg_dis_threshold, float layer_seg_dis_
         extract.setInputCloud(cloud_foreground);
         extract.setIndices(inliers);
 
-        if (A >= 0.5) //初步判定平面为水平方向平面,水平面需要聚类，分割或者去除同一平面不相连区域。
+        if (abs(A) >= 0.5) //初步判定平面为水平方向平面,水平面需要聚类，分割或者去除同一平面不相连区域。
         {
             // Extract the planar inliers from the input cloud
             pcl::PointCloud<PointT>::Ptr cloud_plane(new pcl::PointCloud<PointT>());
@@ -387,6 +389,9 @@ void DepthDetect::planar_seg(float plane_seg_dis_threshold, float layer_seg_dis_
                 {
                     ground_cloud = cloud_plane; //没有暂存，暂存该平面并跳过该平面的处理
                     ground_is_stored = true;
+                    //---------Remove the planar inliers, extract the rest----------!!!
+                    extract.setNegative(true);
+                    extract.filter(*cloud_foreground);
                     continue;
                 }
             }
@@ -407,6 +412,7 @@ void DepthDetect::planar_seg(float plane_seg_dis_threshold, float layer_seg_dis_
             ec.setMaxClusterSize(cloud_plane->size() + 1);
             ec.setInputCloud(cloud_plane);
             ec.extract(cluster_indices);
+            // std::cout << "plane " << i << " has " << cluster_indices.size() << " cluster" << std::endl;
 
             //--------------------遍历平面聚类，存储平面聚类点云、平面聚类参数、平面聚类边界点云，平面聚类分割结果---------------------------------
             for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
@@ -433,6 +439,9 @@ void DepthDetect::planar_seg(float plane_seg_dis_threshold, float layer_seg_dis_
                         int c = round(point.y * constant / point.z); //使用round实现四舍五入的float转int,默认的float转int只取整数位。
                         seg_image.at<uchar>(r, c) = hp_no;
                     }
+                    // std::stringstream ss;
+                    // ss << "plane_cluster_" << hp_no << ".pcd";
+                    // pcl::io::savePCDFile(ss.str(), *cloud_cluster);
 
                     plane_border_clouds.push_back(*extract_border(cloud_cluster));
                     plane_clouds.push_back(*cloud_cluster);
@@ -680,14 +689,14 @@ void DepthDetect::object_detect()
     [in] cloud_foreground: 去除支撑面的剩余点云
     [in] plane_pure_border_clouds
     [out] seg_image: 将支撑面完善成桌子等具体物体。
-    @param ec_dis_threshold(default=0.25) 物体距离聚类阈值,应当适当小一些，独立部分较小会自动归属于附近类
+    @param ec_dis_threshold(default=0.25 0.12) 物体距离聚类阈值,应当适当小一些，独立部分较小会自动归属于附近类
 */
 void DepthDetect::object_detect_2D(float ec_dis_threshold)
 {
     //-------------创建新点云，将剩余点云与桌面点云组合----------------------
     pcl::PointCloud<PointT>::Ptr cloud(new pcl::PointCloud<PointT>);
-
     int plane_num = plane_pure_border_clouds.size();
+
     std::vector<int> plane_idx_ends;
     //遍历平面边缘,将点云存入新点云并计算平面尾索引。平面0对应索引0
     for (int plane_no = 0; plane_no < plane_num; plane_no++)
@@ -729,11 +738,28 @@ void DepthDetect::object_detect_2D(float ec_dis_threshold)
     ec.extract(cluster_indices);
 
     //-------------step2:对不同聚类结果分别赋予不同的序列号(根据object_no)----------------
-    int object_num = 0;
+    // int object_num = 0;
     //遍历聚类
     for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
     {
+        if (plane_num == 0)
+        {
+            //遍历聚类，修改聚类内点二维映射为物体编号。
+            for (const auto &idx : it->indices)
+            {
+                PointT point = (*cloud)[idx];
+                int r = round(point.x * constant / point.z); // grid_x = x * constant / depth
+                int c = round(point.y * constant / point.z); //使用round实现四舍五入的float转int,默认的float转int只取整数位。
+                seg_image.at<uchar>(r, c) = object_no;
+            }
+
+            //加入了一个新物体,序号加一
+            object_no++;
+            continue;
+        }
+
         int type = -1;
+
         //遍历单个聚类内索引
         for (const auto &idx : it->indices)
         {
@@ -764,22 +790,12 @@ void DepthDetect::object_detect_2D(float ec_dis_threshold)
                 seg_image.at<uchar>(r, c) = object_no;
             }
 
-            pcl::PointCloud<PointT>::Ptr cloud_cluster(new pcl::PointCloud<PointT>);
-            //-------------------------------------------此处可以直接改为赋值，不提取点云,但时间代价并不大
-            for (const auto &idx : it->indices)
-                cloud_cluster->push_back((*cloud)[idx]); //*
-            cloud_cluster->width = cloud_cluster->size();
-            cloud_cluster->height = 1;
-            cloud_cluster->is_dense = true;
-            std::stringstream ss0;
-            ss0 << "object_" << object_no-object_start_no << ".pcd";
-            pcl::io::savePCDFile(ss0.str(), *cloud_cluster);
-
             //加入了一个新物体,序号加一
             object_no++;
         }
         else //该聚类中检测到了边界点
         {
+            // std::cout << object_num << "This cluster is follow to plane" << type + hp_start_no << std::endl;
             //遍历聚类，修改聚类内点二维映射为平面编号。
             for (const auto &idx : it->indices)
             {
@@ -789,6 +805,7 @@ void DepthDetect::object_detect_2D(float ec_dis_threshold)
                 seg_image.at<uchar>(r, c) = type + hp_start_no;
             }
         }
+        // object_num++;
     }
 }
 
@@ -818,7 +835,8 @@ void DepthDetect::border_clean(bool fix)
         }
         else
         {
-            int num = lines_fit(border_cloud);
+            int num = lines_fit(border_cloud, 0.2f, 0.1f);
+            // std::cout << plane_no << "," << num << std::endl;
             if (num >= 2) //如果可以拟合出两条及以上的直线对其边界做凸包并填充。
             {
                 if (fix)
@@ -846,7 +864,7 @@ void DepthDetect::shape_fix(int plane_no)
     contours.push_back(contour);
     //填充区域之前，首先采用polylines()函数，可以使填充的区域边缘更光滑,平滑会导致插值或者类似现象，平滑后会影响物体合并
     // cv::polylines(seg_image, contours, true, cv::Scalar(plane_no + hp_start_no), 2, cv::LINE_AA); //第2个参数可以采用contour或者contours，均可
-    cv::fillPoly(seg_image, contours, cv::Scalar(plane_no + hp_start_no));                        // fillPoly函数的第二个参数是二维数组！！
+    cv::fillPoly(seg_image, contours, cv::Scalar(plane_no + hp_start_no)); // fillPoly函数的第二个参数是二维数组！！
 }
 /*
     此前应先尝试拟合椭圆，不是椭圆则认为是多边形，从边界点中拟合出若干满足阈值的线段。
@@ -856,7 +874,7 @@ void DepthDetect::shape_fix(int plane_no)
     @param line_dis_threshold: (default=0.05) 拟合直线距离阈值，前景精度较高应当合理控制,但不能过小，否则相当一部分会无法识别
     @return line_num 该边界可以拟合出的直线的数量
 */
-int DepthDetect::lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, float line_threshold_percent, float line_dis_threshold)
+int DepthDetect::lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, float line_threshold_percent, float line_dis_threshold, int plane_no)
 {
     int border_point_num = border_cloud->size(); // border_cloud会过滤，数目会变化，因而应当在处理前先算。
 
@@ -1080,10 +1098,17 @@ void DepthDetect::object_merge(float merge_threshold)
         }
     }
 
-    float IOUs[50][50];
+    // float IOUs[50][50]; //直接分配定长二维数组
+
+    float **IOUs = new float *[object_num]; // p[]的元素为指针类型数据
     for (int i = 0; i < object_num; i++)
     {
-        for (int j = i+1; j < object_num; j++)
+        IOUs[i] = new float[object_num]; // p[i]为数组的函指针
+    }
+
+    for (int i = 0; i < object_num; i++)
+    {
+        for (int j = i + 1; j < object_num; j++)
         {
             int leni = x_maxs[i] - x_mins[i];
             int lenj = x_maxs[j] - x_mins[j];
@@ -1093,12 +1118,11 @@ void DepthDetect::object_merge(float merge_threshold)
             IOUs[i][j] = (float)(right - left) / len;
             if (IOUs[i][j] < 0)
                 IOUs[i][j] = 0;
-            
         }
     }
     for (int i = 0; i < object_num; i++)
     {
-        for (int j = i+1; j < object_num; j++)
+        for (int j = i + 1; j < object_num; j++)
         {
             if (IOUs[i][j] > 0.75)
             {
@@ -1114,4 +1138,12 @@ void DepthDetect::object_merge(float merge_threshold)
             }
         }
     }
+
+    for (int i = 0; i < object_num; i++) //因为p是一个动态的数组，所以数组空间动态分配，程序不能自动 释放，所以自己要用delet释放。
+    {
+        delete[] IOUs[i];
+        IOUs[i] = NULL;
+    }
+    delete[] IOUs; //释放指针和
+    IOUs = NULL;
 }

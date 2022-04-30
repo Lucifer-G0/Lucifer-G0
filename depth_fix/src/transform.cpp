@@ -45,7 +45,7 @@ cv::Mat depth_to_uint8(cv::Mat depth)
 pcl::PointCloud<PointT>::Ptr depth2cloud(std::string filename, bool test)
 {
 	pcl::console::TicToc tt;
-	Mat Depth = cv::imread(filename, 2);
+	Mat Depth = cv::imread(filename, -1);
 	int imw = Depth.cols, imh = Depth.rows;
 	int channels = Depth.channels();
 
