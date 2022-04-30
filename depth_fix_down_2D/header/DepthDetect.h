@@ -21,15 +21,15 @@ private:
     int object_start_no = 50, object_no; //检测出的物体索引
     int vp_start_no = 200, vp_no;        //背景面的索引
     int ground_no = 255;                 //地面的序号
+    std::vector<float> object_points_nums;
     pcl::PointCloud<PointT>::Ptr cloud_junction;                 //交界点云，随后随部分物体加入背景点云
 
     // for BackGround
 public:
-    void back_plane_fix(pcl::PointCloud<PointT>::Ptr cloud, pcl::PointIndices::Ptr inliers, pcl::ModelCoefficients::Ptr coefficients,int back_object_no);
-    void back_plane_fix_2D(pcl::PointCloud<PointT>::Ptr cloud_cluster, pcl::PointIndices::Ptr inliers);
+    void back_plane_fix(pcl::PointCloud<PointT>::Ptr cloud, pcl::PointIndices::Ptr inliers, pcl::ModelCoefficients::Ptr coefficients);
     void back_object_fill_2D(int point_enlarge=3);
-
-    void back_cluster_extract(float back_ec_dis_threshold = 0.5f, bool fix=false, float plane_seg_dis_threshold = 0.2f);
+    void back_plane_fix_2D_bak(pcl::PointCloud<PointT>::Ptr cloud_cluster, pcl::PointIndices::Ptr inliers);
+    void back_cluster_extract(int dimension = 2, float back_ec_dis_threshold = 0.5f, float plane_seg_dis_threshold = 0.2f);
     void back_cluster_extract_2D(float back_ec_dis_threshold = 0.5f);
     cv::Mat get_Depth() { return Depth; }
     std::vector<cv::Rect> get_object_window();
@@ -49,8 +49,6 @@ public:
     std::vector<pcl::PointCloud<PointT>> plane_border_clouds;      //存储识别出来的独立水平面的边缘
     std::vector<pcl::PointCloud<PointT>> plane_pure_border_clouds; //存储识别出来的独立水平面的纯净边缘，不包含因为遮挡造成的。
     pcl::PointCloud<PointT>::Ptr ground_cloud;                     //暂存/存储识别出来的地面,可能会出现更远的面成为地面
-    std::vector<pcl::PointCloud<PointT>> object_clouds;             //存储识别出来的独立前景物体
-    std::vector<pcl::PointCloud<PointT>> back_object_clouds;        //存储识别出来的独立背景物体
 
     void planar_seg(float plane_seg_dis_threshold = 0.13f, float layer_seg_dis_threshold = 0.3f);
     pcl::PointCloud<PointT>::Ptr extract_border(pcl::PointCloud<PointT>::Ptr cloud_cluster, int n = 1);
@@ -64,7 +62,7 @@ public:
     int lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, float line_threshold_percent = 0.2f, float line_dis_threshold = 0.05f, int plane_no = 999);
     void shape_fix(int plane_no);
 
-    void object_detect(float ec_dis_threshold = 0.25f);
+    void object_detect();
     void object_detect_2D(float ec_dis_threshold = 0.25f, int follow_point_enlarge=0);
 
     void object_merge(float merge_threshold = 0.8f);
