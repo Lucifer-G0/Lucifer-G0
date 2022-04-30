@@ -17,20 +17,24 @@ public:
 
 private:
     float constant = 570.3f; // RGBD数据集给定的相机参数，影响数据尺度
-
     int hp_start_no = 1, hp_no;          // horizontal plane num, 水平面的索引
     int object_start_no = 50, object_no; //检测出的物体索引
     int vp_start_no = 200, vp_no;        //背景面的索引
     int ground_no = 255;                 //地面的序号
+    std::vector<float> object_points_nums;
+    pcl::PointCloud<PointT>::Ptr cloud_junction;                 //交界点云，随后随部分物体加入背景点云
 
     // for BackGround
 public:
     void back_plane_fix(pcl::PointCloud<PointT>::Ptr cloud, pcl::PointIndices::Ptr inliers, pcl::ModelCoefficients::Ptr coefficients);
-    void back_plane_fill_2D();
+    void back_object_fill_2D(int point_enlarge=3);
     void back_plane_fix_2D_bak(pcl::PointCloud<PointT>::Ptr cloud_cluster, pcl::PointIndices::Ptr inliers);
     void back_cluster_extract(int dimension = 2, float back_ec_dis_threshold = 0.5f, float plane_seg_dis_threshold = 0.2f);
     void back_cluster_extract_2D(float back_ec_dis_threshold = 0.5f);
     cv::Mat get_Depth() { return Depth; }
+    std::vector<cv::Rect> get_object_window();
+    std::vector<cv::Rect> get_back_object_window();
+    std::vector<cv::Rect> get_plane_window();
 
 private:
     cv::Mat Depth;                                 //深度数据
@@ -53,7 +57,7 @@ public:
     
     void plane_fill_2D();
 
-    void border_clean(bool fix = false);
+    void caculate_clean_border(bool fix = false);
     bool ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud, float fit_threshold_percent = 0.4f, float dis_threshold = 3.0f);
     int lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, float line_threshold_percent = 0.2f, float line_dis_threshold = 0.05f, int plane_no = 999);
     void shape_fix(int plane_no);
@@ -69,6 +73,5 @@ private:
     float max_D = 0.0f;                             //最远平面距离，平面系数里的D
     bool ground_is_stored = false;                  //表示ground_cloud内是否存有平面。
     int fore_seg_threshold;                         //水平面点数量阈值
-    // std::vector<pcl::ModelCoefficients> plane_coes; //存储识别出的独立水平面的参数
     cv::Point2f get_ellipse_nearest_point(float semi_major, float semi_minor, cv::Point2f p);
 };

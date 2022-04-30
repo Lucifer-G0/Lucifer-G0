@@ -5,6 +5,7 @@
 #include <pcl/point_types.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/filters/passthrough.h>
+#include <pcl/surface/mls.h>
 
 #include "DepthDetect.h"
 
@@ -15,39 +16,54 @@ int main()
 	pcl::console::TicToc tt;
 	tt.tic();
 
-	cv::String imagefolder = "../scene_01/*-depth.png";
+	cv::String imagefolder = "../scene_11/*-depth.png";
 	std::vector<std::string> image_paths;
 	cv::glob(imagefolder, image_paths, false);
 
-	//object-merge(object-merge opencv可能会产生莫名其妙创建错误)
-	// #pragma omp parallel for
+	// object-merge(object-merge opencv可能会产生莫名其妙创建错误)
+	//  #pragma omp parallel for
 	for (auto image_path : image_paths)
 	{
 		int start = image_path.rfind("/"), end = image_path.rfind("-depth");
 		start = start == std::string::npos ? 0 : start + 1;
 		std::string image_no = image_path.substr(start, end - start);
 		std::cout << "depth detect: " << image_no << std::endl;
-		// std::string image_no="00035";
-		// std::string image_path="../scene_01/00035-depth.png";
+		// std::string image_no="00318";
+		// std::string image_path="../scene_11/00318-depth.png";
 
 		DepthDetect dd(image_path, 2, 0.8f);
-		dd.back_cluster_extract_2D();
+
 		dd.planar_seg();
 		dd.plane_fill_2D();
-		dd.border_clean();//false
-		dd.object_detect_2D(0.2,3);
+		dd.caculate_clean_border();
+		dd.object_detect_2D(0.2, 4);
 		dd.object_merge();
-		// dd.back_plane_fill_2D();
+		dd.back_cluster_extract_2D();
+		// dd.back_object_fill_2D(10);
 		dd.object_fill_2D();
 
-		cv::Mat color_seg_image(dd.height, dd.width, CV_8UC3,cv::Scalar(0,0,0));
+		cv::Mat color_seg_image(dd.height, dd.width, CV_8UC3, cv::Scalar(0, 0, 0));
 		dd.get_color_seg_image(color_seg_image);
-		cv::imwrite("../output/"+image_no+"-seg.png", color_seg_image);
-	// 	cv::imshow("object_detect_2D", color_seg_image);
+		std::vector<cv::Rect> rects=dd.get_object_window();
+		std::vector<cv::Rect> back_rects=dd.get_back_object_window();
+		std::vector<cv::Rect> plane_rects=dd.get_plane_window();
+		for(int i=0;i<rects.size();i++)
+		{
+			cv::rectangle(color_seg_image,rects[i],cv::Scalar(255,0,0),3);
+		}
+		for(int i=0;i<back_rects.size();i++)
+		{
+			cv::rectangle(color_seg_image,back_rects[i],cv::Scalar(0,255,0),1);
+		}
+		for(int i=0;i<plane_rects.size();i++)
+		{
+			cv::rectangle(color_seg_image,plane_rects[i],cv::Scalar(0,0,255),1);
+		}
+		cv::imwrite("../output/" + image_no + "-seg.png", color_seg_image);
+		// // 	cv::imshow("object_detect_2D", color_seg_image);
 	}
 
-	std::cout << "[done, " << tt.toc () << " ms ]" << std::endl;
-
+	std::cout << "[done, " << tt.toc() << " ms ]" << std::endl;
 
 	return 0;
 }

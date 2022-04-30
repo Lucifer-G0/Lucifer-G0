@@ -13,6 +13,7 @@
 #include <pcl/filters/passthrough.h>
 #include <pcl/filters/voxel_grid.h>
 #include <pcl/filters/statistical_outlier_removal.h> //统计滤波器头文件
+#include <pcl/filters/random_sample.h>
 
 #include "DepthDetect.h"
 #include "ObjectWindow.h"
@@ -47,12 +48,12 @@ DepthDetect::DepthDetect(std::string depth_path, int dimension, float back_thres
     // pcl::io::savePCDFile("before.pcd", *cloud);
     // std::cout << "before: " << cloud->size() << std::endl;
 
-    // 创建滤波对象
-    pcl::VoxelGrid<pcl::PointXYZ> filter;
-    filter.setInputCloud(cloud);
-    // 设置体素栅格的大小为 10x10x10cm
-    filter.setLeafSize(0.1f, 0.1f, 0.1f);
-    filter.filter(*cloud);
+    pcl::RandomSample<PointT> rs;
+    rs.setInputCloud(cloud);
+    //设置输出点的数量
+    rs.setSample(cloud->size() * 0.1f);
+    //下采样并输出到cloud_out
+    rs.filter(*cloud);
 
     // pcl::io::savePCDFile("after.pcd", *cloud);
     // std::cout << "after: " << cloud->size() << std::endl;
@@ -74,13 +75,23 @@ DepthDetect::DepthDetect(std::string depth_path, int dimension, float back_thres
     //---------根据阈值过滤出背景,分割出背景和前景------------------------------------
     cloud_background = pcl::PointCloud<PointT>::Ptr(new pcl::PointCloud<PointT>);
     cloud_foreground = pcl::PointCloud<PointT>::Ptr(new pcl::PointCloud<PointT>);
+    cloud_junction = pcl::PointCloud<PointT>::Ptr(new pcl::PointCloud<PointT>);
     pcl::PassThrough<PointT> pass;
     pass.setInputCloud(cloud);
     pass.setFilterFieldName("z");
-    pass.setFilterLimits(back_threshold, max_depth); //阈值到最大值
-    pass.filter(*cloud_background);                  //背景点云
-    pass.setFilterLimits(0.001, back_threshold - 0.001);
+
+    pass.setFilterLimits(back_threshold + 0.5, max_depth); //阈值到最大值
+    pass.filter(*cloud_background);                        //背景点云
+    pass.setFilterLimits(back_threshold - 0.5, back_threshold + 1 - 0.001);
+    pass.filter(*cloud_junction); //交界点云
+    pass.setFilterLimits(0.001, back_threshold - 0.5 - 0.001);
     pass.filter(*cloud_foreground); //前景点云,需注意前景必须去除零点，因为零点占相当大部分
+    // pcl::io::savePCDFile("foreground.pcd", *cloud_foreground);
+    // std::cout << "foreground: " << cloud_foreground->size() << std::endl;
+    // pcl::io::savePCDFile("background.pcd", *cloud_background);
+    // std::cout << "background: " << cloud_background->size() << std::endl;
+    // pcl::io::savePCDFile("junction.pcd", *cloud_junction);
+    // std::cout << "junction: " << cloud_junction->size() << std::endl;
 
     fore_seg_threshold = fore_seg_threshold_percent * cloud_foreground->size();
 
@@ -286,20 +297,35 @@ void DepthDetect::back_cluster_extract_2D(float back_ec_dis_threshold)
 }
 
 /*
-    根据背景已经画在seg_image上的对应标号提取某标号边界
+    根据背景物体已经画在seg_image上的对应标号进行扩充
     [OUT] seg_image 根据所在平面序号填充 seg_image
-    @param cloud_cluster: 欧几里德聚类得到的一个聚类
+    @param point_enlarge: 一个点扩充单边扩充距离
 */
-void DepthDetect::back_plane_fill_2D()
+void DepthDetect::back_object_fill_2D(int point_enlarge)
 {
-    for (int i = vp_start_no; i < vp_no; i++)
+    for (int r = 0; r < height; r++)
     {
-        std::vector<cv::Point> contour = extract_border_2D(i);
-        if (contour.size() != 0)
+        for (int c = 0; c < width; c++)
         {
-            std::vector<std::vector<cv::Point>> contours;
-            contours.push_back(contour);
-            cv::fillPoly(seg_image, contours, cv::Scalar(i)); // fillPoly函数的第二个参数是二维数组！！
+            if (seg_image.at<uchar>(r, c) >= vp_start_no && seg_image.at<uchar>(r, c) < vp_no)
+            {
+                //因为下采样，补全扩充填充
+                for (int i = r - point_enlarge; i <= r + point_enlarge; i++)
+                {
+                    if (i < 0)
+                        continue;
+                    if (i >= height)
+                        break;
+                    for (int j = c - point_enlarge; j <= c + point_enlarge; j++)
+                    {
+                        if (j < 0)
+                            continue;
+                        if (j >= width)
+                            break;
+                        seg_image.at<uchar>(i, j) = vp_no + (seg_image.at<uchar>(r, c) - vp_start_no); //用新标号标记,避免无限蔓延
+                    }
+                }
+            }
         }
     }
 }
@@ -442,8 +468,9 @@ void DepthDetect::planar_seg(float plane_seg_dis_threshold, float layer_seg_dis_
             //--------------------遍历平面聚类，存储平面聚类点云、平面聚类参数、平面聚类边界点云，平面聚类分割结果---------------------------------
             for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
             {
+                // std::cout<<"it->indices.size() = "<<it->indices.size()<<", cloud_plane->size() * 0.2f="<<cloud_plane->size() * 0.2f<<std::endl;
                 //如果聚类过小，比较可能是远处其他垂直面的一部分，将其返还给剩余点云
-                if (it->indices.size() < cloud_plane->size() * 0.1f) //最小聚类数量：-------------------点云数量的二十分之一，或许过小了？？？
+                if (it->indices.size() < cloud_plane->size() * 0.2f) //最小聚类数量：-------------------点云数量的二十分之一，或许过小了？？？
                 {
                     for (const auto &idx : it->indices)
                         cloud_foreground->push_back((*cloud_plane)[idx]);
@@ -464,9 +491,9 @@ void DepthDetect::planar_seg(float plane_seg_dis_threshold, float layer_seg_dis_
                         int c = round(point.y * constant / point.z); //使用round实现四舍五入的float转int,默认的float转int只取整数位。
                         seg_image.at<uchar>(r, c) = hp_no;
                     }
-                    std::stringstream ss;
-                    ss << "plane_cluster_" << hp_no << ".pcd";
-                    pcl::io::savePCDFile(ss.str(), *cloud_cluster);
+                    // std::stringstream ss;
+                    // ss << "plane_cluster_" << hp_no << ".pcd";
+                    // pcl::io::savePCDFile(ss.str(), *cloud_cluster);
 
                     plane_border_clouds.push_back(*extract_border(cloud_cluster));
                     plane_clouds.push_back(*cloud_cluster);
@@ -496,7 +523,7 @@ void DepthDetect::planar_seg(float plane_seg_dis_threshold, float layer_seg_dis_
         std::vector<pcl::PointIndices> cluster_indices;
         pcl::EuclideanClusterExtraction<PointT> ec;
         ec.setClusterTolerance(layer_seg_dis_threshold);
-        ec.setMinClusterSize(100); //如果限制该约束，较小的聚类会自动并入大的里面，追求的效果是将其返还
+        ec.setMinClusterSize(100); //如果限制该约束，较小的聚类会自动丢弃?，追求的效果是将其返还
         tree->setInputCloud(ground_cloud);
         ec.setSearchMethod(tree);
         ec.setMaxClusterSize(ground_cloud->size() + 1);
@@ -504,7 +531,7 @@ void DepthDetect::planar_seg(float plane_seg_dis_threshold, float layer_seg_dis_
         ec.extract(cluster_indices);
         for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
         {
-            if (it->indices.size() < ground_cloud->size() * 0.1f)
+            if (it->indices.size() < ground_cloud->size() * 0.2f)
                 for (const auto &idx : it->indices)
                     cloud_foreground->push_back((*ground_cloud)[idx]);
             else
@@ -834,6 +861,18 @@ void DepthDetect::object_detect_2D(float ec_dis_threshold, int follow_point_enla
 
         plane_idx_ends.push_back(plane_idx_end);
     }
+    //将交界点云拷贝到新点云
+    for (auto &point : *cloud_junction)
+    {
+        cloud->push_back(point);
+    }
+    //确定交界点云的索引区域
+    int junction_end_idx;
+    if (plane_num != 0)
+        junction_end_idx = plane_idx_ends[plane_idx_ends.size() - 1] + cloud_junction->size();
+    else
+        junction_end_idx = cloud_junction->size() - 1;
+
     //将前景剩余点云拷贝到新点云
     for (auto &point : *cloud_foreground)
     {
@@ -862,39 +901,42 @@ void DepthDetect::object_detect_2D(float ec_dis_threshold, int follow_point_enla
     //遍历聚类
     for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
     {
-        if (plane_num == 0)
-        {
-            //遍历聚类，修改聚类内点二维映射为物体编号。
-            for (const auto &idx : it->indices)
-            {
-                PointT point = (*cloud)[idx];
-                int r = round(point.x * constant / point.z); // grid_x = x * constant / depth
-                int c = round(point.y * constant / point.z); //使用round实现四舍五入的float转int,默认的float转int只取整数位。
-                seg_image.at<uchar>(r, c) = object_no;
-            }
-
-            //加入了一个新物体,序号加一
-            object_no++;
-            continue;
-        }
-
         int type = -1;
 
-        //遍历单个聚类内索引
-        for (const auto &idx : it->indices)
+        if (plane_num != 0) //平面数量不等于零，检查物体聚类内是否有边界点，如果有，该类归属于边界
         {
-            //这个点属于平面边界,该聚类应该归属于边界。
-            if (idx <= plane_idx_ends[plane_num - 1])
+            //遍历单个聚类内索引
+            for (const auto &idx : it->indices)
             {
-                for (int plane_no = 0; plane_no < plane_num; plane_no++)
+                //这个点属于平面边界,该聚类应该归属于边界。
+                if (idx <= plane_idx_ends[plane_num - 1])
                 {
-                    if (idx <= plane_idx_ends[plane_no])
+                    for (int plane_no = 0; plane_no < plane_num; plane_no++)
                     {
-                        type = plane_no;
-                        break;
+                        if (idx <= plane_idx_ends[plane_no])
+                        {
+                            type = plane_no;
+                            break;
+                        }
                     }
+                    break;
                 }
-                break;
+                else if (idx <= junction_end_idx) //这个点属于交界点，将该物体归属于背景点云
+                {
+                    type = -2;
+                    break;
+                }
+            }
+        }
+        else //即使平面数量为零，仍要检查聚类内是否有点为交界点，如果有，设置标志为-2并在后续将聚类返还给背景点云
+        {
+            for (const auto &idx : it->indices)
+            {
+                if (idx <= junction_end_idx) //这个点属于交界点，将该物体归属于背景点云
+                {
+                    type = -2;
+                    break;
+                }
             }
         }
 
@@ -911,10 +953,18 @@ void DepthDetect::object_detect_2D(float ec_dis_threshold, int follow_point_enla
                 seg_image.at<uchar>(r, c) = object_no;
                 pn++;
             }
+            object_points_nums.push_back(pn);
             // std::cout<<"object "<<object_no<<" num: "<<pn<<std::endl;
-
             //加入了一个新物体,序号加一
             object_no++;
+        }
+        else if (type == -2) //该物体聚类内有交界点返回给了背景
+        {
+            // std::cout << "This object has junciton point, return it to background!" << std::endl;
+            for (const auto &idx : it->indices)
+            {
+                cloud_background->push_back((*cloud)[idx]);
+            }
         }
         else //该聚类中检测到了边界点
         {
@@ -955,7 +1005,7 @@ void DepthDetect::object_detect_2D(float ec_dis_threshold, int follow_point_enla
     [in] plane_border_clouds,只读不写   [out] cloud_pure_border
     @param fix 是否做平面形状修复
 */
-void DepthDetect::border_clean(bool fix)
+void DepthDetect::caculate_clean_border(bool fix)
 {
 
     int plane_num = plane_border_clouds.size();
@@ -964,34 +1014,33 @@ void DepthDetect::border_clean(bool fix)
     {
         //-------------得到边界点-----------------
         pcl::PointCloud<PointT>::Ptr border_cloud(new pcl::PointCloud<PointT>);
+        pcl::PointCloud<PointT>::Ptr sor_border_cloud(new pcl::PointCloud<PointT>);
+        pcl::PointCloud<PointT>::Ptr left_sor_border_cloud(new pcl::PointCloud<PointT>);
         for (auto &point : plane_border_clouds[plane_no])
             border_cloud->push_back(point); //遍历平面边缘内点
 
-        // std::stringstream ss0;
-        // ss0 << "plane_" << plane_no << "_border.pcd";
-        // pcl::io::savePCDFile(ss0.str(), *border_cloud);
-
-        // /*方法三：统计滤波器滤波*/
-        // pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_after_StatisticalRemoval(new pcl::PointCloud<pcl::PointXYZ>); //
-        // pcl::StatisticalOutlierRemoval<pcl::PointXYZ> Statistical;
-        // Statistical.setInputCloud(border_cloud);
-        // Statistical.setMeanK(5);           //取平均值的临近点数
-        // Statistical.setStddevMulThresh(5); //临近点数数目少于多少时会被舍弃
-        // Statistical.filter(*cloud_after_StatisticalRemoval);
-
         // std::stringstream ss1;
-        // ss1 << "plane_" << plane_no << "_sr_border.pcd";
-        // pcl::io::savePCDFile(ss1.str(), *cloud_after_StatisticalRemoval);
+        // ss1 << "plane_" << plane_no << "_border.pcd";
+        // pcl::io::savePCDFile(ss1.str(), *border_cloud);
+        // Create the filtering object
+        pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+        sor.setInputCloud(border_cloud);
+        sor.setMeanK(10);
+        sor.setStddevMulThresh(0.2);
+        sor.filter(*sor_border_cloud);
+        // std::stringstream ss2;
+        // ss2 << "plane_" << plane_no << "_sor_border.pcd";
+        // pcl::io::savePCDFile(ss2.str(), *sor_border_cloud);
 
         //------------opencv二维角度拟合椭圆-------------------
-        if (ellipse_fit(border_cloud))
+        if (ellipse_fit(sor_border_cloud, 0.5, 5))
         {
             if (fix)
                 shape_fix(plane_no);
         }
         else
         {
-            int num = lines_fit(border_cloud, 0.1f, 0.1f, plane_no);
+            int num = lines_fit(sor_border_cloud, 0.1f, 0.1f, plane_no);
             // std::cout << plane_no << "," << num << std::endl;
             if (num >= 2) //如果可以拟合出两条及以上的直线对其边界做凸包并填充。
             {
@@ -1147,7 +1196,7 @@ bool DepthDetect::ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud, float f
         }
         border_point_no++;
     }
-
+    // std::cout << "ellipse fit: inliers_num=" << inliers_num << ", fit_threshold = " << fit_threshold << std::endl;
     if (inliers_num > fit_threshold)
     {
         //------------------extract pure border point to cloud_pure_border--------------------------
@@ -1289,7 +1338,8 @@ void DepthDetect::object_merge(float merge_threshold)
                 //水平方向值域重合度达标,判断边缘切合程度
                 std::vector<cv::Point> borderi = extract_border_2D(object_start_no + i);
                 std::vector<cv::Point> borderj = extract_border_2D(object_start_no + j);
-                if(borderi.size()==0||borderj.size()==0) continue;//避免同个物体多次合并找不到
+                if (borderi.size() == 0 || borderj.size() == 0)
+                    continue; //避免同个物体多次合并找不到
                 std::vector<int> i_ys;
                 std::vector<int> j_ys;
                 for (cv::Point point : borderi)
@@ -1308,7 +1358,6 @@ void DepthDetect::object_merge(float merge_threshold)
                         for (int c = x_mins[j]; c <= x_maxs[j]; c++)
                             if (seg_image.at<uchar>(r, c) == object_start_no + j)
                                 seg_image.at<uchar>(r, c) = object_start_no + i;
-
                 }
             }
         }
@@ -1325,17 +1374,25 @@ void DepthDetect::object_merge(float merge_threshold)
 
 void DepthDetect::object_fill_2D()
 {
-    for (int i = object_start_no; i < object_no; i++)
+    // std::vector<float> sorted_object_min_depths(object_points_nums);
+    // std::sort(sorted_object_min_depths.begin(), sorted_object_min_depths.end());
+
+    for (int j = object_start_no; j < object_no; j++)
     {
-        std::vector<cv::Point> contour = extract_border_2D(i);
+        // if (object_points_nums[j - object_start_no] < sorted_object_min_depths[sorted_object_min_depths.size() - 1])
+        // {
+        std::vector<cv::Point> contour = extract_border_2D(j);
         if (contour.size() != 0)
         {
-            // std::vector<cv::Point> convex;
-            // cv::convexHull(contour, convex);
+            std::vector<cv::Point> convex;
+            cv::convexHull(contour, convex);
             std::vector<std::vector<cv::Point>> contours;
-            contours.push_back(contour);
-            cv::fillPoly(seg_image, contours, cv::Scalar(i)); // fillPoly函数的第二个参数是二维数组！！
+            contours.push_back(convex);
+            //填充区域之前，首先采用polylines()函数，可以使填充的区域边缘更光滑
+            cv::polylines(seg_image, contours, true, cv::Scalar(j), 2, cv::LINE_8); //第2个参数可以采用contour或者contours，均可
+            cv::fillPoly(seg_image, contours, cv::Scalar(j));                       // fillPoly函数的第二个参数是二维数组！！
         }
+        // }
     }
 }
 
@@ -1365,4 +1422,135 @@ void DepthDetect::plane_fill_2D()
             cv::fillPoly(seg_image, contours, cv::Scalar(ground_no)); // fillPoly函数的第二个参数是二维数组！！
         }
     }
+}
+std::vector<cv::Rect> DepthDetect::get_object_window()
+{
+    int object_num = object_no - object_start_no;
+    std::vector<cv::Rect> rects;
+    std::vector<int> min_xs(object_num, width), max_xs(object_num, -1), min_ys(object_num, height), max_ys(object_num, -1);
+
+    for (int r = 0; r < height; r++)
+    {
+        for (int c = 0; c < width; c++)
+        {
+            int seg_object_no = (int)seg_image.at<uchar>(r, c) - object_start_no; //这是第几个物体
+            if (seg_object_no >= 0 && seg_object_no < object_num)
+            {
+                if (c < min_xs[seg_object_no])
+                {
+                    min_xs[seg_object_no] = c;
+                }
+                if (c > max_xs[seg_object_no])
+                {
+                    max_xs[seg_object_no] = c;
+                }
+                if (r < min_ys[seg_object_no])
+                {
+                    min_ys[seg_object_no] = r;
+                }
+                if (r > max_ys[seg_object_no])
+                {
+                    max_ys[seg_object_no] = r;
+                }
+            }
+        }
+    }
+    for (int i = 0; i < object_num; i++)
+    {
+        rects.push_back(cv::Rect(min_xs[i], min_ys[i], max_xs[i] - min_xs[i], max_ys[i] - min_ys[i]));
+    }
+    return rects;
+}
+std::vector<cv::Rect> DepthDetect::get_back_object_window()
+{
+    int back_object_num = vp_no - vp_start_no;
+    std::vector<cv::Rect> rects;
+    std::vector<int> back_min_xs(back_object_num, width), back_max_xs(back_object_num, -1), back_min_ys(back_object_num, height), back_max_ys(back_object_num, -1);
+    for (int r = 0; r < height; r++)
+    {
+        for (int c = 0; c < width; c++)
+        {
+
+            int seg_back_no = (int)seg_image.at<uchar>(r, c) - vp_start_no; //这是第几个背景物体
+            if (seg_back_no >= 0 && seg_back_no < back_object_num)
+            {
+                if (c < back_min_xs[seg_back_no])
+                {
+                    back_min_xs[seg_back_no] = c;
+                }
+                if (c > back_max_xs[seg_back_no])
+                {
+                    back_max_xs[seg_back_no] = c;
+                }
+                if (r < back_min_ys[seg_back_no])
+                {
+                    back_min_ys[seg_back_no] = r;
+                }
+                if (r > back_max_ys[seg_back_no])
+                {
+                    back_max_ys[seg_back_no] = r;
+                }
+            }
+        }
+    }
+    for (int i = 0; i < back_object_num; i++)
+    {
+        rects.push_back(cv::Rect(back_min_xs[i], back_min_ys[i], back_max_xs[i] - back_min_xs[i], back_max_ys[i] - back_min_ys[i]));
+    }
+
+    return rects;
+}
+std::vector<cv::Rect> DepthDetect::get_plane_window()
+{
+    int plane_num = hp_no - hp_start_no;
+    std::vector<cv::Rect> rects;
+
+    if (plane_num == 0)
+    {
+        int plane_min_xs = width, plane_max_xs = -1, plane_min_ys = height, plane_max_ys = -1;
+        for (int r = 0; r < height; r++)
+        {
+            for (int c = 0; c < width; c++)
+                if (seg_image.at<uchar>(r, c) == 255)
+                {
+                    if (c < plane_min_xs)
+                        plane_min_xs = c;
+                    if (c > plane_max_xs)
+                        plane_max_xs = c;
+                    if (r < plane_min_ys)
+                        plane_min_ys = r;
+                    if (r > plane_max_ys)
+                        plane_max_ys = r;
+                }
+        }
+        rects.push_back(cv::Rect(plane_min_xs, plane_min_ys, plane_max_xs - plane_min_xs, plane_max_ys - plane_min_ys));
+    }
+    else
+    {
+        std::vector<int> plane_min_xs(plane_num, width), plane_max_xs(plane_num, -1), plane_min_ys(plane_num, height), plane_max_ys(plane_num, -1);
+        for (int r = 0; r < height; r++)
+        {
+            for (int c = 0; c < width; c++)
+            {
+                int seg_back_no = (int)seg_image.at<uchar>(r, c) - hp_start_no; //这是第几个背景物体
+                if (seg_back_no >= 0 && seg_back_no < plane_num)
+                {
+                    if (c < plane_min_xs[seg_back_no])
+                        plane_min_xs[seg_back_no] = c;
+                    if (c > plane_max_xs[seg_back_no])
+                        plane_max_xs[seg_back_no] = c;
+                    if (r < plane_min_ys[seg_back_no])
+                        plane_min_ys[seg_back_no] = r;
+                    if (r > plane_max_ys[seg_back_no])
+                        plane_max_ys[seg_back_no] = r;
+                }
+            }
+        }
+        for (int i = 0; i < plane_num; i++)
+        {
+            rects.push_back(cv::Rect(plane_min_xs[i], plane_min_ys[i], plane_max_xs[i] - plane_min_xs[i], plane_max_ys[i] - plane_min_ys[i]));
+        }
+    }
+
+    return rects;
 }

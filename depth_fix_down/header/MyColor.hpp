@@ -126,6 +126,24 @@
 #define MY_DarkViolet cv::Vec3b(148, 0, 211)
 #define MY_DarkOrchid cv::Vec3b(153, 50, 204)
 #define MY_DarkMagenta cv::Vec3b(139, 0, 139)
+// white
+#define MY_White cv::Vec3b(255, 255, 255)
+#define MY_Snow cv::Vec3b(255, 250, 250)
+#define MY_Honeydew cv::Vec3b(240, 255, 240)
+#define MY_MintCream cv::Vec3b(245, 255, 250)
+#define MY_Azure cv::Vec3b(240, 255, 255)
+#define MY_AliceBlue cv::Vec3b(240, 248, 255)
+#define MY_GhostWhite cv::Vec3b(248, 248, 255)
+#define MY_WhiteSmoke cv::Vec3b(245, 245, 245)
+#define MY_Seashell cv::Vec3b(255, 245, 238)
+#define MY_Beige cv::Vec3b(245, 245, 220)
+#define MY_OldLace cv::Vec3b(253, 245, 230)
+#define MY_FloralWhite cv::Vec3b(255, 250, 240)
+#define MY_Ivory cv::Vec3b(255, 255, 240)
+#define MY_AntiqueWhite cv::Vec3b(250, 235, 215)
+#define MY_Linen cv::Vec3b(250, 240, 230)
+#define MY_LavenderBlush cv::Vec3b(255, 240, 245)
+#define MY_MistyRose cv::Vec3b(255, 228, 225)
 
 class MyColor
 {
@@ -143,8 +161,8 @@ public:
 
 MyColor::MyColor()
 {
-    hole_color=cv::Vec3b(0, 0, 0);
-    ground_color=MY_Purple;
+    hole_color = cv::Vec3b(0, 0, 0);
+    ground_color = MY_Purple;
     // purple to plane
     plane_colors.push_back(MY_Plum);
     plane_colors.push_back(MY_Violet);
@@ -155,7 +173,7 @@ MyColor::MyColor()
     plane_colors.push_back(MY_DarkViolet);
     plane_colors.push_back(MY_DarkMagenta);
 
-    // gray to back
+    // white and gray pink to back
     back_colors.push_back(MY_Gray);
     back_colors.push_back(MY_LightGrey);
     back_colors.push_back(MY_Silver);
@@ -165,6 +183,23 @@ MyColor::MyColor()
     back_colors.push_back(MY_LightSlateGray);
     back_colors.push_back(MY_SlateGray);
     back_colors.push_back(MY_DarkSlateGray);
+    back_colors.push_back(MY_White);
+    back_colors.push_back(MY_Snow);
+    back_colors.push_back(MY_Honeydew);
+    back_colors.push_back(MY_MintCream);
+    back_colors.push_back(MY_Azure);
+    back_colors.push_back(MY_AliceBlue);
+    back_colors.push_back(MY_GhostWhite);
+    back_colors.push_back(MY_WhiteSmoke);
+    back_colors.push_back(MY_Seashell);
+    back_colors.push_back(MY_Beige);
+    back_colors.push_back(MY_OldLace);
+    back_colors.push_back(MY_FloralWhite);
+    back_colors.push_back(MY_Ivory);
+    back_colors.push_back(MY_AntiqueWhite);
+    back_colors.push_back(MY_Linen);
+    back_colors.push_back(MY_LavenderBlush);
+    back_colors.push_back(MY_MistyRose);
 
     // others to object
     object_colors.push_back(MY_Red);
@@ -257,7 +292,7 @@ MyColor::MyColor()
     object_colors.push_back(MY_Sienna);
     object_colors.push_back(MY_Maroon);
 
-    pc_size=plane_colors.size();
-    oc_size=object_colors.size();
-    bc_size=back_colors.size();
+    pc_size = plane_colors.size();
+    oc_size = object_colors.size();
+    bc_size = back_colors.size();
 }
