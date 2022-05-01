@@ -5,7 +5,6 @@
 #include <pcl/point_types.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/filters/passthrough.h>
-#include <pcl/visualization/pcl_visualizer.h>
 
 #include "DepthDetect.h"
 
@@ -13,39 +12,36 @@
 #include <pcl/common/angles.h> // for pcl::deg2rad
 #include <pcl/features/normal_3d.h>
 #include <pcl/io/pcd_io.h>
-#include <pcl/visualization/pcl_visualizer.h>
 #include <pcl/console/parse.h>
+
 void detect_2D_Example();
+void detect_3D_Example();
+
 int main()
 {
-	detect_2D_Example();
-	// pcl::console::TicToc tt;
-	// tt.tic();
-
-	// cv::String imagefolder = "../scene_14/*-depth.png";
-	// std::vector<std::string> image_paths;
-	// cv::glob(imagefolder, image_paths, false);
-
-	// // object-merge(object-merge opencv可能会产生莫名其妙创建错误)
-	// //  #pragma omp parallel for
-	// for (auto image_path : image_paths)
-	// {
-	// 	int start = image_path.rfind("/"), end = image_path.rfind("-depth");
-	// 	start = start == std::string::npos ? 0 : start + 1;
-	// 	std::string image_no = image_path.substr(start, end - start);
-	// 	std::cout << "depth detect: " << image_no << std::endl;
-
-	// 	DepthDetect dd(image_path, 3, 0.8f);
-	// 	dd.planar_seg();	//平面分割,平面点云存入plane_clouds,地面点云存入ground_cloud
-	// 	dd.caculate_clean_border();	//计算纯净边界,存入plane_pure_border_clouds,后续需加入前景聚类
-
-	// }
-
-	// std::cout << "[done, " << tt.toc() << " ms ]" << std::endl;
+	detect_3D_Example();
 
 	return 0;
 }
+void detect_3D_Example()
+{
+	pcl::console::TicToc tt;
+	tt.tic();
+	std::string image_no = "00000";
+	std::string image_path = "../scene_01/00000-depth.png";
+	std::cout << "depth detect: " << image_no << std::endl;
 
+	DepthDetect dd(image_path, 3, 0.8f);
+	dd.planar_seg();			//平面分割,平面点云存入plane_clouds,地面点云存入ground_cloud
+	dd.caculate_clean_border(); //计算纯净边界,存入plane_pure_border_clouds,后续需加入前景聚类
+	dd.object_detect();			//前景物体检测，前景分为前景物体、背景和平面
+	dd.object_merge();
+	dd.back_cluster_extract();	//对背景做聚类，将背景分为背景物体
+	std::cout << "[done, " << tt.toc() << " ms ]" << std::endl;
+	// dd.show_3D();
+	pcl::io::savePCDFile("color_pointcloud.pcd",*dd.get_color_pointcloud());
+	
+}
 void detect_2D_Example()
 {
 	pcl::console::TicToc tt;
@@ -72,7 +68,7 @@ void detect_2D_Example()
 		dd.plane_fill_2D();
 		dd.caculate_clean_border();
 		dd.object_detect_2D(0.2, 4);
-		dd.object_merge();
+		dd.object_merge_2D();
 		dd.back_cluster_extract_2D();
 		// dd.back_object_fill_2D(10);
 		dd.object_fill_2D();

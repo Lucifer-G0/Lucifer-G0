@@ -5,7 +5,7 @@
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/sample_consensus/method_types.h>
 #include <pcl/sample_consensus/model_types.h>
-
+#include <pcl/visualization/pcl_visualizer.h>
 #include <pcl/ModelCoefficients.h>
 #include <pcl/filters/extract_indices.h>
 #include <pcl/search/kdtree.h>
@@ -133,11 +133,116 @@ cv::Mat DepthDetect::get_color_seg_image(cv::Mat &color_seg_image)
             }
             else if (seg_no >= hp_start_no)
             {
-                color_seg_image.at<cv::Vec3b>(r, c) = my_color.plane_colors[seg_no - hp_start_no];
+                color_seg_image.at<cv::Vec3b>(r, c) = my_color.plane_colors[(seg_no - hp_start_no) % my_color.pc_size];
             }
         }
     }
     return color_seg_image;
+}
+
+//测试环境：ubuntu显示效果左手坐标系，要对z取反才正常显示。
+void DepthDetect::show_3D()
+{
+    pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer("3D Viewer"));
+    viewer->setBackgroundColor(0, 0, 0);
+    //------------------将物体点云彩色化并加入----------------------------------------------
+    MyColor myColor;
+    int object_num = object_clouds.size();
+    for (int i = 0; i < object_num; i++)
+    {
+        pcl::PointCloud<PointT>::Ptr object_cloud = pcl::PointCloud<PointT>::Ptr(new pcl::PointCloud<PointT>);
+        for (PointT point : object_clouds[i])
+        {
+            object_cloud->push_back(PointT(point.x, point.y, -point.z));
+        }
+        cv::Vec3b color = myColor.object_colors[(i * 7) % myColor.oc_size];
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> single_color(object_cloud, color[0], color[1], color[2]);
+        viewer->addPointCloud<pcl::PointXYZ>(object_cloud, single_color, "object_" + std::to_string(i), 0);
+    }
+    int back_object_num = back_object_clouds.size();
+    for (int i = 0; i < back_object_num; i++)
+    {
+        pcl::PointCloud<PointT>::Ptr back_object_cloud = pcl::PointCloud<PointT>::Ptr(new pcl::PointCloud<PointT>);
+        for (PointT point : back_object_clouds[i])
+        {
+            back_object_cloud->push_back(PointT(point.x, point.y, -point.z));
+        }
+        cv::Vec3b color = myColor.back_colors[(i * 3) % myColor.oc_size];
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> single_color(back_object_cloud, color[0], color[1], color[2]);
+        viewer->addPointCloud<pcl::PointXYZ>(back_object_cloud, single_color, "back_object_" + std::to_string(i), 0);
+    }
+    int plane_num = plane_clouds.size();
+    for (int i = 0; i < plane_num; i++)
+    {
+        pcl::PointCloud<PointT>::Ptr plane_cloud = pcl::PointCloud<PointT>::Ptr(new pcl::PointCloud<PointT>);
+        for (PointT point : plane_clouds[i])
+        {
+            plane_cloud->push_back(PointT(point.x, point.y, -point.z));
+        }
+        cv::Vec3b color = myColor.plane_colors[i % myColor.pc_size];
+        pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> single_color(plane_cloud, color[0], color[1], color[2]);
+        viewer->addPointCloud<pcl::PointXYZ>(plane_cloud, single_color, "plane_" + std::to_string(i), 0);
+    }
+    pcl::PointCloud<PointT>::Ptr view_ground_cloud = pcl::PointCloud<PointT>::Ptr(new pcl::PointCloud<PointT>);
+    for (PointT point : *ground_cloud)
+    {
+        view_ground_cloud->push_back(PointT(point.x, point.y, -point.z));
+    }
+    pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> single_color(view_ground_cloud, myColor.ground_color[0], myColor.ground_color[1], myColor.ground_color[2]);
+    viewer->addPointCloud<pcl::PointXYZ>(view_ground_cloud, single_color, "ground", 0);
+    // viewer->addCoordinateSystem(10.0);
+    viewer->initCameraParameters();
+    viewer->setCameraPosition(-5, -5, 10, -1, 0, 0, 0);
+
+    while (!viewer->wasStopped())
+    {
+        viewer->spinOnce(100);
+        pcl_sleep(0.01);
+    }
+}
+
+/*
+    根据分割(合并)结果,将不同物体赋予色彩组合成为彩色点云.
+    [IN] object_clouds, back_object_clouds, plane_clouds, ground_cloud
+    @return 分割结果点云
+*/
+pcl::PointCloud<PointC>::Ptr DepthDetect::get_color_pointcloud()
+{
+    pcl::PointCloud<PointC>::Ptr color_pointcloud = pcl::PointCloud<PointC>::Ptr(new pcl::PointCloud<PointC>);
+    MyColor myColor;
+    int object_num = object_clouds.size();
+    for (int i = 0; i < object_num; i++)
+    {
+        cv::Vec3b color = myColor.object_colors[(i * 8) % myColor.oc_size];
+        for (PointT point : object_clouds[i])
+        {
+            color_pointcloud->push_back(PointC(point.x, point.y, -point.z, color[0], color[1], color[2]));
+        }
+    }
+    int back_object_num = back_object_clouds.size();
+    for (int i = 0; i < back_object_num; i++)
+    {
+        cv::Vec3b color = myColor.back_colors[(i * 3) % myColor.oc_size];
+        for (PointT point : back_object_clouds[i])
+        {
+            color_pointcloud->push_back(PointC(point.x, point.y, -point.z, color[0], color[1], color[2]));
+        }
+    }
+    int plane_num = plane_clouds.size();
+    for (int i = 0; i < plane_num; i++)
+    {
+        cv::Vec3b color = myColor.plane_colors[i % myColor.pc_size];
+        for (PointT point : plane_clouds[i])
+        {
+            color_pointcloud->push_back(PointC(point.x, point.y, -point.z, color[0], color[1], color[2]));
+        }
+    }
+    cv::Vec3b color = myColor.ground_color;
+    for (PointT point : *ground_cloud)
+    {
+        color_pointcloud->push_back(PointC(point.x, point.y, -point.z, color[0], color[1], color[2]));
+    }
+    return color_pointcloud;
 }
 
 /*
@@ -237,7 +342,7 @@ void DepthDetect::back_plane_fix(pcl::PointCloud<PointT>::Ptr cloud_cluster, pcl
                 Depth.at<float>(r, c) = z;
                 float x = r * z / constant / 1000.;
                 float y = c * z / constant / 1000.;
-                back_object_clouds[back_object_no-vp_start_no].push_back(PointT(x,y,z));
+                back_object_clouds[back_object_no - vp_start_no].push_back(PointT(x, y, z));
             }
             else if (Mask.at<uchar>(r, c) == 1) //已经被填充过的空洞点,优先填充为深的
             {
@@ -247,7 +352,7 @@ void DepthDetect::back_plane_fix(pcl::PointCloud<PointT>::Ptr cloud_cluster, pcl
                     Depth.at<float>(r, c) = z;
                     float x = r * z / constant / 1000.;
                     float y = c * z / constant / 1000.;
-                    back_object_clouds[back_object_no-vp_start_no].push_back(PointT(x,y,z));
+                    back_object_clouds[back_object_no - vp_start_no].push_back(PointT(x, y, z));
                 }
             }
         }
@@ -562,11 +667,11 @@ pcl::PointCloud<PointT>::Ptr DepthDetect::extract_border(pcl::PointCloud<PointT>
     cv::Mat map = cv::Mat::zeros(height, width, CV_32F);
 
     int count = 0;
-    //形成映射图像，便于边界提取
+    //形成映射图像，使点云恢复组织性,便于边界提取
     for (auto &point : *cloud_cluster)
     {
-        int r = point.x * constant / point.z; // grid_x = x * constant / depth
-        int c = point.y * constant / point.z;
+        int r = round(point.x * constant / point.z); // grid_x = x * constant / depth
+        int c = round(point.y * constant / point.z);
         map.at<float>(r, c) = point.z;
         count++;
     }
@@ -726,8 +831,8 @@ std::vector<cv::Point> DepthDetect::extract_border_2D_bak(pcl::PointCloud<PointT
     //形成映射图像，便于边界提取
     for (auto &point : cloud_cluster)
     {
-        int r = point.x * constant / point.z; // grid_x = x * constant / depth
-        int c = point.y * constant / point.z;
+        int r = round(point.x * constant / point.z); // grid_x = x * constant / depth
+        int c = round(point.y * constant / point.z);
         map.at<uchar>(r, c) = 1;
     }
 
@@ -791,8 +896,8 @@ std::vector<cv::Point> DepthDetect::extract_border_2D_bak(pcl::PointCloud<PointT
 }
 
 /*
-    [in]: cloud_foreground,前景点云，此时为去除平面垂面后的前景点云的剩余点云
-    [out]: pcd 存储聚类结果到pcd
+    [in]: cloud_foreground,前景点云，此时为去除平面后的前景点云的剩余点云
+    [out]: object_cloud | cloud_background | plane_clouds 将前景分为前景物体、背景物体、平面
 */
 void DepthDetect::object_detect(float ec_dis_threshold)
 {
@@ -919,7 +1024,7 @@ void DepthDetect::object_detect(float ec_dis_threshold)
         {
             for (const auto &idx : it->indices)
             {
-                plane_clouds[type + hp_start_no].push_back((*cloud)[idx]);
+                plane_clouds[type].push_back((*cloud)[idx]);
             }
         }
     }
@@ -1372,12 +1477,110 @@ cv::Point2f DepthDetect::get_ellipse_nearest_point(float semi_major, float semi_
 }
 
 /*
+    将由于边缘缺失导致的一个物体被分成两块的物体(碗等)进行合并
+    [IN]    object_clouds 物体点云,随后被映射为二维空间的x\y坐标
+    [OUT]   object_clouds 物体点云,部分物体加入其他物体,自身清空.获取结果为for循环形式,不用担心数组越界类似问题
+    @param  merge_threshold: (default=0.8)上下边缘重合度达到阈值认定为同一物体，该阈值应该尽量大一些，否则易导致错误合并
+*/
+void DepthDetect::object_merge(float merge_threshold)
+{
+    //-------------遍历所有物体点云,检测x\y值域,注意此处坐标对照(点云中x为竖向)--------------------
+    int object_num = object_no - object_start_no; // Object_no最终处于多加一状态
+    std::vector<int> x_mins, y_mins;
+    std::vector<int> x_maxs, y_maxs;
+    for (int i = 0; i < object_num; i++)
+    {
+        std::vector<int> x_values, y_values;
+        for (PointT point : object_clouds[i])//必须转换,点云中的x\y与知觉分布是不一致的.
+        {
+            int y = round(point.x * constant / point.z); // grid_x = x * constant / depth
+            int x = round(point.y * constant / point.z); //使用round实现四舍五入的float转int,默认的float转int只取整数位。
+            x_values.push_back(x);
+            y_values.push_back(y);
+        }
+        std::sort(x_values.begin(), x_values.end());
+        std::sort(y_values.begin(), y_values.end());
+        x_mins.push_back(x_values[0]);
+        x_maxs.push_back(x_values[x_values.size() - 1]);
+        y_mins.push_back(y_values[0]);
+        y_maxs.push_back(y_values[y_values.size() - 1]);
+    }
+    //---------------检查水平值域重合度---------------------
+    float **IOUs = new float *[object_num]; // p[]的元素为指针类型数据
+    for (int i = 0; i < object_num; i++)
+    {
+        IOUs[i] = new float[object_num]; // p[i]为数组的函指针
+    }
+
+    for (int i = 0; i < object_num; i++)
+    {
+        // printf("%d x (%d,%d)",i,x_mins[i],x_maxs[i]);
+        // printf("%d y (%d,%d)\n",i,y_mins[i],y_maxs[i]);
+        for (int j = i + 1; j < object_num; j++)
+        {
+            int leni = x_maxs[i] - x_mins[i];
+            int lenj = x_maxs[j] - x_mins[j];
+            int len = leni > lenj ? leni : lenj;                       //最大长度
+            int left = x_mins[i] > x_mins[j] ? x_mins[i] : x_mins[j];  //最大左端点
+            int right = x_maxs[i] < x_maxs[j] ? x_maxs[i] : x_maxs[j]; //最小右端点
+            IOUs[i][j] = (float)(right - left) / len;
+            if (IOUs[i][j] < 0)
+                IOUs[i][j] = 0;
+            // printf("%d,%d: %.2f ",i,j,IOUs[i][j]);
+        }
+        // printf("\n");
+    }
+    
+    std::vector<int> merge_tos;          //指示i号物体合并给了谁
+    for (int i = 0; i < object_num; i++) //初始化
+        merge_tos.push_back(i);
+
+    for (int i = 0; i < object_num; i++)
+    {
+        for (int j = i + 1; j < object_num; j++)
+        {
+            if (IOUs[i][j] > 0.75f)
+            {
+                //水平方向值域重合度达标,判断边缘切合程度,注意避免同个物体多次合并找不到
+                float left = y_mins[i] > y_mins[j] ? y_mins[i] : y_mins[j];  //最大左端点
+                float right = y_maxs[i] < y_maxs[j] ? y_maxs[i] : y_maxs[j]; //最小右端点
+                if (right - left >= 0)                                     // y值域有重合,合并
+                {
+                    // std::cout<<"merge"<<std::endl;
+                    if (merge_tos[i] == i)//没被合并过,只需变自己
+                    {
+                        object_clouds[j] += object_clouds[merge_tos[i]];
+                        object_clouds[merge_tos[i]].clear();
+                        merge_tos[i] = j;
+                    }
+                    else//已经合并过了,还要再合并,把合并过的合并给新的,两个的编号都要更改
+                    {
+                        object_clouds[j] += object_clouds[merge_tos[i]];
+                        object_clouds[merge_tos[i]].clear();
+                        merge_tos[merge_tos[i]]=j;
+                        merge_tos[i] = j;
+                    }
+                }
+            }
+        }
+    }
+
+    for (int i = 0; i < object_num; i++) //因为p是一个动态的数组，所以数组空间动态分配，程序不能自动 释放，所以自己要用delet释放。
+    {
+        delete[] IOUs[i];
+        IOUs[i] = NULL;
+    }
+    delete[] IOUs; //释放指针和
+    IOUs = NULL;
+}
+
+/*
     将由于边缘缺失导致的一个物体被分成两块的物体(碗)进行合并
     [IN]    seg_image   分割完物体的seg_image
     [OUT]   seg_image   物体合并后的seg_image
     @param  merge_threshold: (default=0.8)上下边缘重合度达到阈值认定为同一物体，该阈值应该尽量大一些，否则易导致错误合并
 */
-void DepthDetect::object_merge(float merge_threshold)
+void DepthDetect::object_merge_2D(float merge_threshold)
 {
     //----------------从seg_image提取出每个物体x轴值域----------------------
     int object_num = object_no - object_start_no; // Object_no最终处于多加一状态
