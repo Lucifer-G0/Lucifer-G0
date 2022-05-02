@@ -15,6 +15,7 @@
 #include <pcl/filters/statistical_outlier_removal.h> //统计滤波器头文件
 #include <pcl/filters/random_sample.h>
 #include <pcl/features/moment_of_inertia_estimation.h>
+#include <pcl/filters/model_outlier_removal.h>
 
 #include "DepthDetect.h"
 #include "ObjectWindow.h"
@@ -83,7 +84,7 @@ DepthDetect::DepthDetect(std::string depth_path, int dimension, float back_thres
 
     pass.setFilterLimits(back_threshold + 0.5, max_depth); //阈值到最大值
     pass.filter(*cloud_background);                        //背景点云
-    pass.setFilterLimits(back_threshold - 0.5, back_threshold + 1 - 0.001);
+    pass.setFilterLimits(back_threshold - 0.5, back_threshold + 0.5 - 0.001);
     pass.filter(*cloud_junction); //交界点云
     pass.setFilterLimits(0.001, back_threshold - 0.5 - 0.001);
     pass.filter(*cloud_foreground); //前景点云,需注意前景必须去除零点，因为零点占相当大部分
@@ -146,7 +147,7 @@ void DepthDetect::show_3D()
 {
     pcl::visualization::PCLVisualizer::Ptr viewer(new pcl::visualization::PCLVisualizer("3D Viewer"));
     viewer->setBackgroundColor(0, 0, 0);
-    
+
     //------------------将物体点云彩色化并加入----------------------------------------------
     MyColor myColor;
     int object_num = object_clouds.size();
@@ -160,7 +161,7 @@ void DepthDetect::show_3D()
         cv::Vec3b color = myColor.object_colors[(i * 7) % myColor.oc_size];
         pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> single_color(object_cloud, color[0], color[1], color[2]);
         viewer->addPointCloud<pcl::PointXYZ>(object_cloud, single_color, "object_" + std::to_string(i), 0);
-        add_detect_OBB(object_cloud, viewer,cv::Vec3f(1,0,0));
+        add_detect_OBB(object_cloud, viewer, cv::Vec3f(0, 0, 1));
     }
     int back_object_num = back_object_clouds.size();
     for (int i = 0; i < back_object_num; i++)
@@ -173,7 +174,7 @@ void DepthDetect::show_3D()
         cv::Vec3b color = myColor.back_colors[(i * 3) % myColor.oc_size];
         pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> single_color(back_object_cloud, color[0], color[1], color[2]);
         viewer->addPointCloud<pcl::PointXYZ>(back_object_cloud, single_color, "back_object_" + std::to_string(i), 0);
-        add_detect_OBB(back_object_cloud,viewer,cv::Vec3f(0,1,0));
+        add_detect_OBB(back_object_cloud, viewer, cv::Vec3f(0, 1, 0));
     }
     int plane_num = plane_clouds.size();
     for (int i = 0; i < plane_num; i++)
@@ -186,7 +187,7 @@ void DepthDetect::show_3D()
         cv::Vec3b color = myColor.plane_colors[i % myColor.pc_size];
         pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> single_color(plane_cloud, color[0], color[1], color[2]);
         viewer->addPointCloud<pcl::PointXYZ>(plane_cloud, single_color, "plane_" + std::to_string(i), 0);
-        add_detect_OBB(plane_cloud,viewer,cv::Vec3f(0,0,1));
+        add_detect_OBB(plane_cloud, viewer, cv::Vec3f(1, 0, 0));
     }
     pcl::PointCloud<PointT>::Ptr view_ground_cloud = pcl::PointCloud<PointT>::Ptr(new pcl::PointCloud<PointT>);
     for (PointT point : *ground_cloud)
@@ -195,13 +196,12 @@ void DepthDetect::show_3D()
     }
     pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> single_color(view_ground_cloud, myColor.ground_color[0], myColor.ground_color[1], myColor.ground_color[2]);
     viewer->addPointCloud<pcl::PointXYZ>(view_ground_cloud, single_color, "ground", 0);
-    add_detect_OBB(view_ground_cloud,viewer,cv::Vec3f(0.5,0,0.5));
+    add_detect_OBB(view_ground_cloud, viewer, cv::Vec3f(0.5, 0, 0.5));
 
     viewer->initCameraParameters();
     viewer->setCameraPosition(-1, -2, 5, -1, 0, 0, 0);
     viewer->setRepresentationToWireframeForAllActors(); //显示为线框
-    
-    
+
     while (!viewer->wasStopped())
     {
         viewer->spinOnce(100);
@@ -209,7 +209,7 @@ void DepthDetect::show_3D()
     }
 }
 
-void DepthDetect::add_detect_OBB(pcl::PointCloud<PointT>::Ptr object_cloud, pcl::visualization::PCLVisualizer::Ptr viewer,cv::Vec3f color)
+void DepthDetect::add_detect_OBB(pcl::PointCloud<PointT>::Ptr object_cloud, pcl::visualization::PCLVisualizer::Ptr viewer, cv::Vec3f color)
 {
     pcl::MomentOfInertiaEstimation<PointT> feature_extractor;
     feature_extractor.setInputCloud(object_cloud);
@@ -512,11 +512,13 @@ void DepthDetect::back_plane_fix_2D(pcl::PointCloud<PointT>::Ptr cloud_cluster, 
     [out]  plane_clouds 将各平面内点集写入vector plane_clouds
     [out]  plane_coes   将各平面系数写入vector plane_coes(暂未使用)
     [out]  plane_border_clouds  将各平面边界内点集写入vector plane_border_clouds
-    @param plane_seg_dis_threshold: (default=0.13f) 分割平面的距离阈值,前景精度较高应当合理控制,但不能过小，否则相当一部分会作为杂质残留，影响后续质量
+    @param plane_seg_dis_threshold: (default=0.13f) 分割平面的距离阈值,前景精度较高应当合理控制,但不能过小，否则相当一部分会作为杂质残留，影响后续质量.输入同时存入类,提供给平面完整函数使用.
     @param layer_seg_dis_threshold: (default=0.3f)相同高度平面的同层分离的距离阈值(考虑相同高度多平面),目的是分割不靠近的同层平面，可以适当放宽---------------------------------此参数可能仍有待调整
 */
-void DepthDetect::planar_seg(float plane_seg_dis_threshold, float layer_seg_dis_threshold)
+void DepthDetect::planar_seg(float _plane_seg_dis_threshold, float _layer_seg_dis_threshold)
 {
+    plane_seg_dis_threshold = _plane_seg_dis_threshold;
+    layer_seg_dis_threshold = _layer_seg_dis_threshold;
     pcl::SACSegmentation<PointT> seg;
     pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
     pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
@@ -535,7 +537,7 @@ void DepthDetect::planar_seg(float plane_seg_dis_threshold, float layer_seg_dis_
     {
         seg.setInputCloud(cloud_foreground);
         seg.segment(*inliers, *coefficients);
-
+        std::cout << "plane seg " << i << " inliers->indices.size()=" << inliers->indices.size() << ", fore_seg_threshold=" << fore_seg_threshold << std::endl;
         if (inliers->indices.size() < fore_seg_threshold)
         {
             break;
@@ -551,6 +553,7 @@ void DepthDetect::planar_seg(float plane_seg_dis_threshold, float layer_seg_dis_
 
         if (A >= 0.5) //初步判定平面为水平方向平面,水平面需要聚类，分割或者去除同一平面不相连区域。不能取绝对值
         {
+            std::cout << "new ground coefficients: (" << coefficients->values[0] << ", " << coefficients->values[1] << ", " << coefficients->values[2] << ", " << coefficients->values[3] << ", " << std::endl;
             // Extract the planar inliers from the input cloud
             pcl::PointCloud<PointT>::Ptr cloud_plane(new pcl::PointCloud<PointT>());
 
@@ -566,11 +569,13 @@ void DepthDetect::planar_seg(float plane_seg_dis_threshold, float layer_seg_dis_
                     pcl::PointCloud<PointT>::Ptr cloud_plane_g(new pcl::PointCloud<PointT>());
                     cloud_plane_g = ground_cloud;
                     ground_cloud = cloud_plane;
-                    cloud_plane = cloud_plane_g;
+                    ground_coes = *coefficients; //存储地面模型系数，便于后续完整化
+                    cloud_plane = cloud_plane_g; //有新的地面，把旧的拿出来做处理
                 }
                 else
                 {
-                    ground_cloud = cloud_plane; //没有暂存，暂存该平面并跳过该平面的处理
+                    ground_cloud = cloud_plane;  //没有暂存，暂存该平面并跳过该平面的处理
+                    ground_coes = *coefficients; //存储地面模型系数，便于后续完整化
                     ground_is_stored = true;
                     //---------Remove the planar inliers, extract the rest----------!!!
                     extract.setNegative(true);
@@ -602,7 +607,7 @@ void DepthDetect::planar_seg(float plane_seg_dis_threshold, float layer_seg_dis_
             {
                 // std::cout<<"it->indices.size() = "<<it->indices.size()<<", cloud_plane->size() * 0.2f="<<cloud_plane->size() * 0.2f<<std::endl;
                 //如果聚类过小，比较可能是远处其他垂直面的一部分，将其返还给剩余点云
-                if (it->indices.size() < cloud_plane->size() * 0.2f) //最小聚类数量：-------------------点云数量的二十分之一，或许过小了？？？
+                if (it->indices.size() < cloud_plane->size() * 0.1f) //最小聚类数量：-------------------点云数量的二十分之一，或许过小了？？？
                 {
                     for (const auto &idx : it->indices)
                         cloud_foreground->push_back((*cloud_plane)[idx]);
@@ -615,6 +620,11 @@ void DepthDetect::planar_seg(float plane_seg_dis_threshold, float layer_seg_dis_
                     cloud_cluster->width = cloud_cluster->size();
                     cloud_cluster->height = 1;
                     cloud_cluster->is_dense = true;
+                    if (!plane_check(cloud_cluster)) //如果不是平面,将其返回给剩余点云
+                    {
+                        cloud_foreground->concatenate(*cloud_foreground, *cloud_cluster);
+                        continue;
+                    }
 
                     //遍历,某高度平面内的一个独立平面的内点，不存在写冲突，即使已被写过，前景的优先级更高
                     for (auto &point : *cloud_cluster)
@@ -623,11 +633,11 @@ void DepthDetect::planar_seg(float plane_seg_dis_threshold, float layer_seg_dis_
                         int c = round(point.y * constant / point.z); //使用round实现四舍五入的float转int,默认的float转int只取整数位。
                         seg_image.at<uchar>(r, c) = hp_no;
                     }
-                    // std::stringstream ss;
-                    // ss << "plane_cluster_" << hp_no << ".pcd";
-                    // pcl::io::savePCDFile(ss.str(), *cloud_cluster);
+                    std::stringstream ss;
+                    ss << "plane_cluster_" << hp_no << ".pcd";
+                    pcl::io::savePCDFile(ss.str(), *cloud_cluster);
 
-                    plane_border_clouds.push_back(*extract_border(cloud_cluster));
+                    plane_border_clouds.push_back(*extract_border(cloud_cluster, 3));
                     plane_clouds.push_back(*cloud_cluster);
                     hp_no++; //存入了新的平面聚类,平面序号加一
                 }
@@ -650,37 +660,104 @@ void DepthDetect::planar_seg(float plane_seg_dis_threshold, float layer_seg_dis_
     }
     //平面聚类识别结束，非地面平面聚类存入数据，平面仍在暂存中，将平面画到图上。
     if (ground_is_stored) //如果暂存非空，将暂存存入一般平面、边界
-    {
-        pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>());
-        std::vector<pcl::PointIndices> cluster_indices;
-        pcl::EuclideanClusterExtraction<PointT> ec;
-        ec.setClusterTolerance(layer_seg_dis_threshold);
-        ec.setMinClusterSize(100); //如果限制该约束，较小的聚类会自动丢弃?，追求的效果是将其返还
-        tree->setInputCloud(ground_cloud);
-        ec.setSearchMethod(tree);
-        ec.setMaxClusterSize(ground_cloud->size() + 1);
-        ec.setInputCloud(ground_cloud);
-        ec.extract(cluster_indices);
-        for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
-        {
-            if (it->indices.size() < ground_cloud->size() * 0.2f)
-                for (const auto &idx : it->indices)
-                    cloud_foreground->push_back((*ground_cloud)[idx]);
-            else
-            {
-                for (const auto &idx : it->indices)
-                {
-                    PointT point = (*ground_cloud)[idx];
-                    int r = round(point.x * constant / point.z); // grid_x = x * constant / depth
-                    int c = round(point.y * constant / point.z); //使用round实现四舍五入的float转int,默认的float转int只取整数位。
-                    seg_image.at<uchar>(r, c) = ground_no;
-                }
-            }
-        }
-    }
+        ground_complete();
     //将竖面返回给剩余点云
     for (auto &point : *cloud_vps)
         cloud_foreground->push_back(point);
+}
+/*
+    根据地面模型系数，从交界和背景中抽取数据，将地面完整化
+    [IN] ground_coes 地面模型的系数。cloud_background cloud_junction
+    [OUT] seg_image 将属于地面位置填充，ground_cloud 将地面点云完整化，cloud_foreground 地面非平面部分仍给前景。
+*/
+void DepthDetect::ground_complete()
+{
+    std::cout << std::endl
+              << "ground_complete: ground coefficients: (" << ground_coes.values[0] << ", " << ground_coes.values[1] << ", " << ground_coes.values[2] << ", " << ground_coes.values[3] << ", " << std::endl;
+    pcl::PointCloud<PointT>::Ptr cloud_background_plane(new pcl::PointCloud<PointT>);
+    pcl::PointCloud<PointT>::Ptr cloud_junction_plane(new pcl::PointCloud<PointT>);
+
+    pcl::ModelOutlierRemoval<pcl::PointXYZ> back_ground_filter, junc_ground_filter;
+    back_ground_filter.setModelCoefficients(ground_coes);
+    back_ground_filter.setThreshold(plane_seg_dis_threshold * 3); //深度越大越杂乱,需要更大的阈值
+    back_ground_filter.setModelType(pcl::SACMODEL_PLANE);
+    back_ground_filter.setInputCloud(cloud_background);
+    back_ground_filter.filter(*cloud_background_plane);
+    back_ground_filter.setNegative(true);
+    back_ground_filter.filter(*cloud_background);
+
+    junc_ground_filter.setModelCoefficients(ground_coes);
+    junc_ground_filter.setThreshold(plane_seg_dis_threshold * 2);
+    junc_ground_filter.setModelType(pcl::SACMODEL_PLANE);
+    junc_ground_filter.setInputCloud(cloud_junction);
+    junc_ground_filter.filter(*cloud_junction_plane);
+    junc_ground_filter.setNegative(true);
+    junc_ground_filter.filter(*cloud_junction);
+
+    // pcl::io::savePCDFile("ground.pcd", *ground_cloud);
+    *ground_cloud += *cloud_background_plane;
+    // pcl::io::savePCDFile("ground_back.pcd", *ground_cloud);
+    *ground_cloud += *cloud_junction_plane;
+    // pcl::io::savePCDFile("ground_back_junc.pcd", *ground_cloud);
+
+    pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>());
+    std::vector<pcl::PointIndices> cluster_indices;
+    pcl::EuclideanClusterExtraction<PointT> ec;
+    ec.setClusterTolerance(layer_seg_dis_threshold);
+    ec.setMinClusterSize(100); //如果限制该约束，较小的聚类会自动丢弃?，追求的效果是将其返还
+    tree->setInputCloud(ground_cloud);
+    ec.setSearchMethod(tree);
+    ec.setMaxClusterSize(ground_cloud->size() + 1);
+    ec.setInputCloud(ground_cloud);
+    ec.extract(cluster_indices);
+    for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
+    {
+        pcl::PointCloud<PointT>::Ptr cloud_cluster(new pcl::PointCloud<PointT>);
+        for (const auto &idx : it->indices)
+            cloud_cluster->push_back((*ground_cloud)[idx]);
+        cloud_cluster->width = cloud_cluster->size();
+        cloud_cluster->height = 1;
+        cloud_cluster->is_dense = true;
+        if (!plane_check(cloud_cluster)) //如果不是平面,那么地面很可能是桌面，这个聚类是同高度其他物体的一部分。
+        {
+            cloud_foreground->concatenate(*cloud_foreground, *cloud_cluster);
+            continue;
+        }
+        else
+        {
+            for (const auto &idx : it->indices)
+            {
+                PointT point = (*ground_cloud)[idx];
+                int r = round(point.x * constant / point.z); // grid_x = x * constant / depth
+                int c = round(point.y * constant / point.z); //使用round实现四舍五入的float转int,默认的float转int只取整数位。
+                seg_image.at<uchar>(r, c) = ground_no;
+            }
+        }
+    }
+}
+/*
+    从点云聚类中拟合一条直线,如果大多数点都在直线内,这不是一个平面.
+*/
+bool DepthDetect::plane_check(pcl::PointCloud<PointT>::Ptr cloud_cluster, float is_line_threshold, float line_dis_threshold)
+{
+    pcl::SACSegmentation<PointT> seg;
+    pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
+    pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
+
+    seg.setOptimizeCoefficients(true);
+    seg.setModelType(pcl::SACMODEL_LINE);
+    seg.setMethodType(pcl::SAC_RANSAC);
+    seg.setMaxIterations(100);
+    seg.setDistanceThreshold(line_dis_threshold);
+
+    seg.setInputCloud(cloud_cluster);
+    seg.segment(*inliers, *coefficients);
+    std::cout << "plane check: inliers->indices.size()=" << inliers->indices.size() << ", cloud_cluster->size()=" << cloud_cluster->size()
+              << " *is_line_threshold=" << is_line_threshold * cloud_cluster->size() << std::endl;
+    if (inliers->indices.size() > is_line_threshold * cloud_cluster->size())
+        return false;
+    else
+        return true;
 }
 
 /*
@@ -953,11 +1030,13 @@ void DepthDetect::object_detect(float ec_dis_threshold)
 
         plane_idx_ends.push_back(plane_idx_end);
     }
+    pcl::io::savePCDFile("border_cloud.pcd", *cloud);
     //将交界点云拷贝到新点云
     for (auto &point : *cloud_junction)
     {
         cloud->push_back(point);
     }
+    pcl::io::savePCDFile("border_junc_cloud.pcd", *cloud);
     //确定交界点云的索引区域
     int junction_end_idx;
     if (plane_num != 0)
@@ -967,9 +1046,9 @@ void DepthDetect::object_detect(float ec_dis_threshold)
 
     //将前景剩余点云拷贝到新点云
     for (auto &point : *cloud_foreground)
-    {
         cloud->push_back(point);
-    }
+
+    pcl::io::savePCDFile("border_junc_fore_cloud.pcd", *cloud);
 
     //-------------step1:对结合平面边缘的剩余点云进行距离聚类-------------------------------
     pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>());
@@ -986,46 +1065,50 @@ void DepthDetect::object_detect(float ec_dis_threshold)
 
     //-------------step2:对不同聚类结果分别赋予不同的序列号(根据object_no)----------------
     // int object_num = 0;
+
     //遍历聚类
     for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
     {
         int type = -1;
-
+        bool include_plane_border = false;
+        bool include_juction = false;
         if (plane_num != 0) //平面数量不等于零，检查物体聚类内是否有边界点，如果有，该类归属于边界
         {
             //遍历单个聚类内索引
             for (const auto &idx : it->indices)
             {
-                //这个点属于平面边界,该聚类应该归属于边界。
+                //如果有索引属于平面边界,则该物体聚类包含平面平面,找它属于哪个边界,之后不再检查包含边界
                 if (idx <= plane_idx_ends[plane_num - 1])
                 {
-                    for (int plane_no = 0; plane_no < plane_num; plane_no++)
+                    if (!include_plane_border)
                     {
-                        if (idx <= plane_idx_ends[plane_no])
-                        {
-                            type = plane_no;
-                            break;
-                        }
+                        for (int plane_no = 0; plane_no < plane_num; plane_no++)
+                            if (idx <= plane_idx_ends[plane_no])
+                            {
+                                type = plane_no;
+                                include_plane_border = true;
+                                break;
+                            }
                     }
-                    break;
                 }
-                else if (idx <= junction_end_idx) //这个点属于交界点，将该物体归属于背景点云
+                else if (idx <= junction_end_idx && !include_juction) ///如果有索引属于交界,该物体或平面被交界截开，之后不再检查是否包含交界
                 {
-                    type = -2;
-                    break;
+                    if (type == -1) //同时包含交界和边界的情况type=palne_no
+                        type = -2;
+                    include_juction = true;
                 }
+                if (include_plane_border && include_juction) //同时包含边界点和交界点,判定此聚类是一个被截开的平面,检查结束
+                    break;
             }
         }
         else //即使平面数量为零，仍要检查聚类内是否有点为交界点，如果有，设置标志为-2并在后续将聚类返还给背景点云
-        {
+        {    //地面做了完整化处理，不会被截开，只可能是前景物体或背景物体
             for (const auto &idx : it->indices)
-            {
                 if (idx <= junction_end_idx) //这个点属于交界点，将该物体归属于背景点云
                 {
                     type = -2;
                     break;
                 }
-            }
         }
         //该聚类中没有检测到边界点
         if (type == -1)
@@ -1033,25 +1116,29 @@ void DepthDetect::object_detect(float ec_dis_threshold)
             pcl::PointCloud<PointT>::Ptr object_cloud_cluster(new pcl::PointCloud<PointT>);
             //遍历聚类，修改聚类内点二维映射为物体编号。
             for (const auto &idx : it->indices)
-            {
                 object_cloud_cluster->push_back((*cloud)[idx]);
-            }
+
             object_clouds.push_back(*object_cloud_cluster);
             //加入了一个新物体,序号加一
             object_no++;
         }
         else if (type == -2) //该物体聚类内有交界点返回给了背景
         {
+            std::cout << "object_detect: return to cloud_background!" << std::endl;
             for (const auto &idx : it->indices)
-            {
                 cloud_background->push_back((*cloud)[idx]);
-            }
         }
         else //该聚类中检测到了边界点,将其归属于平面type + hp_start_no
         {
+            // pcl::PointCloud<PointT>::Ptr object_cloud_cluster(new pcl::PointCloud<PointT>);
             for (const auto &idx : it->indices)
             {
+                // object_cloud_cluster->push_back((*cloud)[idx]);
                 plane_clouds[type].push_back((*cloud)[idx]);
+            }
+            if (include_juction) //同时包含边界点与交界点，交界点部分单独存储，后续加入背景点云聚类，将后部平面加入平面
+            {
+                std::cout << "This is a break plane!" << std::endl; //暂不处理
             }
         }
     }
@@ -1133,30 +1220,32 @@ void DepthDetect::object_detect_2D(float ec_dis_threshold, int follow_point_enla
     for (std::vector<pcl::PointIndices>::const_iterator it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
     {
         int type = -1;
-
+        bool include_plane_border = false;
+        bool include_juction = false;
         if (plane_num != 0) //平面数量不等于零，检查物体聚类内是否有边界点，如果有，该类归属于边界
         {
             //遍历单个聚类内索引
             for (const auto &idx : it->indices)
             {
-                //这个点属于平面边界,该聚类应该归属于边界。
-                if (idx <= plane_idx_ends[plane_num - 1])
+                //如果有索引属于平面边界,则该物体聚类包含平面平面,找它属于哪个边界,之后不再检查包含边界
+                if (idx <= plane_idx_ends[plane_num - 1] && !include_plane_border)
                 {
                     for (int plane_no = 0; plane_no < plane_num; plane_no++)
-                    {
                         if (idx <= plane_idx_ends[plane_no])
                         {
                             type = plane_no;
+                            include_plane_border = true;
                             break;
                         }
-                    }
-                    break;
                 }
-                else if (idx <= junction_end_idx) //这个点属于交界点，将该物体归属于背景点云
+                if (idx > plane_idx_ends[plane_num - 1] && idx <= junction_end_idx && !include_juction) ///如果有索引属于交界,该物体或平面被交界截开，之后不再检查是否包含交界
                 {
-                    type = -2;
-                    break;
+                    if (type == -1) //同时包含交界和边界的情况type=palne_no
+                        type = -2;
+                    include_juction = true;
                 }
+                if (include_plane_border && include_juction) //同时包含边界点和交界点,判定此聚类是一个被截开的平面,检查结束
+                    break;
             }
         }
         else //即使平面数量为零，仍要检查聚类内是否有点为交界点，如果有，设置标志为-2并在后续将聚类返还给背景点云
@@ -1171,7 +1260,7 @@ void DepthDetect::object_detect_2D(float ec_dis_threshold, int follow_point_enla
             }
         }
 
-        //该聚类中没有检测到边界点
+        //该聚类中没有检测到边界点,是物体，填入序号
         if (type == -1)
         {
             //遍历聚类，修改聚类内点二维映射为物体编号。
@@ -1186,7 +1275,7 @@ void DepthDetect::object_detect_2D(float ec_dis_threshold, int follow_point_enla
             //加入了一个新物体,序号加一
             object_no++;
         }
-        else if (type == -2) //该物体聚类内有交界点返回给了背景
+        else if (type == -2) //该物体聚类内只有交界点,返回给背景
         {
             // std::cout << "This object has junciton point, return it to background!" << std::endl;
             for (const auto &idx : it->indices)
@@ -1221,6 +1310,10 @@ void DepthDetect::object_detect_2D(float ec_dis_threshold, int follow_point_enla
                     }
                 }
             }
+            if (include_juction) //同时包含边界点与交界点，交界点部分单独存储，后续加入背景点云聚类，将后部平面加入平面
+            {
+                std::cout << "This is a break plane!" << std::endl; //暂不处理
+            }
             // std::cout << "object follow hp_no " << type + hp_start_no << std::endl;
         }
         // object_num++;
@@ -1247,28 +1340,28 @@ void DepthDetect::caculate_clean_border(bool fix)
         for (auto &point : plane_border_clouds[plane_no])
             border_cloud->push_back(point); //遍历平面边缘内点
 
-        // std::stringstream ss1;
-        // ss1 << "plane_" << plane_no << "_border.pcd";
-        // pcl::io::savePCDFile(ss1.str(), *border_cloud);
+        std::stringstream ss1;
+        ss1 << "plane_" << plane_no << "_border.pcd";
+        pcl::io::savePCDFile(ss1.str(), *border_cloud);
         // Create the filtering object
-        pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
-        sor.setInputCloud(border_cloud);
-        sor.setMeanK(10);
-        sor.setStddevMulThresh(0.2);
-        sor.filter(*sor_border_cloud);
+        // pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+        // sor.setInputCloud(border_cloud);
+        // sor.setMeanK(10);
+        // sor.setStddevMulThresh(0.2);
+        // sor.filter(*sor_border_cloud);
         // std::stringstream ss2;
         // ss2 << "plane_" << plane_no << "_sor_border.pcd";
         // pcl::io::savePCDFile(ss2.str(), *sor_border_cloud);
 
         //------------opencv二维角度拟合椭圆-------------------
-        if (ellipse_fit(sor_border_cloud, 0.5, 5))
+        if (ellipse_fit(border_cloud, 0.5, 1.5, plane_no))
         {
             if (fix)
                 shape_fix(plane_no);
         }
         else
         {
-            int num = lines_fit(sor_border_cloud, 0.2f, 0.05f, plane_no);//2D sor_border_cloud, 0.1f, 0.1f, plane_no
+            int num = lines_fit(border_cloud, 0.1f, 0.1f, plane_no); // 2D sor_border_cloud, 0.1f, 0.1f, plane_no
             // std::cout << plane_no << "," << num << std::endl;
             if (num >= 2) //如果可以拟合出两条及以上的直线对其边界做凸包并填充。
             {
@@ -1368,7 +1461,7 @@ int DepthDetect::lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, float line
     @param dis_threshold (= 3.0f)   两点之间的距离阈值，用于判断是否椭圆内点，小于为内点
     @return 是否成功拟合椭圆。
 */
-bool DepthDetect::ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud, float fit_threshold_percent, float dis_threshold)
+bool DepthDetect::ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud, float fit_threshold_percent, float dis_threshold, int plane_no)
 {
     int inliers_num = 0;                                            //输入内点的数量
     int border_point_num = border_cloud->size();                    //边界点的总数
@@ -1424,7 +1517,7 @@ bool DepthDetect::ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud, float f
         }
         border_point_no++;
     }
-    // std::cout << "ellipse fit: inliers_num=" << inliers_num << ", fit_threshold = " << fit_threshold << std::endl;
+    std::cout << "ellipse fit: inliers_num=" << inliers_num << ", fit_threshold = " << fit_threshold << std::endl;
     if (inliers_num > fit_threshold)
     {
         //------------------extract pure border point to cloud_pure_border--------------------------
@@ -1440,7 +1533,9 @@ bool DepthDetect::ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud, float f
             }
             border_point_idx++;
         }
-
+        std::stringstream ss1;
+        ss1 << "plane_" << plane_no << "_ellipse_pure_border.pcd";
+        pcl::io::savePCDFile(ss1.str(), *cloud_pure_border);
         //---------------------store inlier points in plane_pure_border_clouds ---------------------------------
         plane_pure_border_clouds.push_back(*cloud_pure_border);
         return true;
@@ -1658,7 +1753,7 @@ void DepthDetect::object_merge_2D(float merge_threshold)
     {
         for (int j = i + 1; j < object_num; j++)
         {
-            if (IOUs[i][j] > 0.75)  //0.85?
+            if (IOUs[i][j] > 0.75) // 0.85?
             {
                 // printf("%d,%d IOU %.2f merge\n", i, j, IOUs[i][j]);
                 //水平方向值域重合度达标,判断边缘切合程度

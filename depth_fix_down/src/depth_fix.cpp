@@ -1,25 +1,18 @@
 #include <opencv2/opencv.hpp>
 
-#include <pcl/ModelCoefficients.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
-#include <pcl/filters/extract_indices.h>
-#include <pcl/filters/passthrough.h>
+#include <pcl/console/time.h>
 
 #include "DepthDetect.h"
-
-#include <pcl/console/time.h>
-#include <pcl/common/angles.h> // for pcl::deg2rad
-#include <pcl/features/normal_3d.h>
-#include <pcl/io/pcd_io.h>
-#include <pcl/console/parse.h>
 
 void detect_2D_Example();
 void detect_3D_Example();
 
 int main()
 {
-	detect_3D_Example();
+	
+	detect_2D_Example();
 
 	return 0;
 }
@@ -34,13 +27,12 @@ void detect_3D_Example()
 	DepthDetect dd(image_path, 3, 0.8f);
 	dd.planar_seg();			//平面分割,平面点云存入plane_clouds,地面点云存入ground_cloud
 	dd.caculate_clean_border(); //计算纯净边界,存入plane_pure_border_clouds,后续需加入前景聚类
-	dd.object_detect();			//前景物体检测，前景分为前景物体、背景和平面
+	dd.object_detect(0.12f);			//前景物体检测，前景分为前景物体、背景和平面
 	dd.object_merge();
-	dd.back_cluster_extract();	//对背景做聚类，将背景分为背景物体
+	dd.back_cluster_extract(); //对背景做聚类，将背景分为背景物体
 	std::cout << "[done, " << tt.toc() << " ms ]" << std::endl;
-	// dd.show_3D();
-	pcl::io::savePCDFile("color_pointcloud.pcd",*dd.get_color_pointcloud());
-	
+	dd.show_3D();
+	// pcl::io::savePCDFile("color_pointcloud.pcd", *dd.get_color_pointcloud());
 }
 void detect_2D_Example()
 {
@@ -62,7 +54,7 @@ void detect_2D_Example()
 		// std::string image_no="00318";
 		// std::string image_path="../scene_11/00318-depth.png";
 
-		DepthDetect dd(image_path, 2, 0.8f);
+		DepthDetect dd(image_path, 2, 0.85f);
 
 		dd.planar_seg();
 		dd.plane_fill_2D();
@@ -71,7 +63,7 @@ void detect_2D_Example()
 		dd.object_merge_2D();
 		dd.back_cluster_extract_2D();
 		// dd.back_object_fill_2D(10);
-		dd.object_fill_2D();
+		// dd.object_fill_2D();
 
 		cv::Mat color_seg_image(dd.height, dd.width, CV_8UC3, cv::Scalar(0, 0, 0));
 		dd.get_color_seg_image(color_seg_image);

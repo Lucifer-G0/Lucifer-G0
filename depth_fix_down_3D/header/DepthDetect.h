@@ -23,7 +23,7 @@ private:
     int object_start_no = 50, object_no;         //检测出的物体索引
     int vp_start_no = 200, vp_no;                //背景面的索引
     int ground_no = 255;                         //地面的序号
-    int OBB_no=0;   //包围盒数量,显示id使用
+    int OBB_no = 0;                              //包围盒数量,显示id使用
     pcl::PointCloud<PointT>::Ptr cloud_junction; //交界点云，随后随部分物体加入背景点云
 
     // for BackGround
@@ -42,7 +42,7 @@ public:
 
     cv::Mat get_Depth() { return Depth; }
     void show_3D();
-    void add_detect_OBB(pcl::PointCloud<PointT>::Ptr object_cloud,pcl::visualization::PCLVisualizer::Ptr viewer,cv::Vec3f color);
+    void add_detect_OBB(pcl::PointCloud<PointT>::Ptr object_cloud, pcl::visualization::PCLVisualizer::Ptr viewer, cv::Vec3f color);
     pcl::PointCloud<PointC>::Ptr get_color_pointcloud();
 
 private:
@@ -60,8 +60,13 @@ public:
     pcl::PointCloud<PointT>::Ptr ground_cloud;                     //暂存/存储识别出来的地面,可能会出现更远的面成为地面
     std::vector<pcl::PointCloud<PointT>> object_clouds;            //存储识别出来的独立前景物体
     std::vector<pcl::PointCloud<PointT>> back_object_clouds;       //存储识别出来的独立背景物体
+    pcl::ModelCoefficients ground_coes;    //地面的模型系数
+    float plane_seg_dis_threshold;  //由planar_seg指定,存储给plane_complete备用
+    float layer_seg_dis_threshold;
 
-    void planar_seg(float plane_seg_dis_threshold = 0.13f, float layer_seg_dis_threshold = 0.3f);
+    void planar_seg(float _plane_seg_dis_threshold = 0.13f, float layer_seg_dis_threshold = 0.3f);
+    bool plane_check(pcl::PointCloud<PointT>::Ptr cloud_cluster, float is_line_threshold = 0.8f, float line_dis_threshold = 0.13f);
+    void ground_complete();
     pcl::PointCloud<PointT>::Ptr extract_border(pcl::PointCloud<PointT>::Ptr cloud_cluster, int n = 1);
     std::vector<cv::Point> extract_border_2D(int seg_no, int n = 1);
     std::vector<cv::Point> extract_border_2D_bak(pcl::PointCloud<PointT> cloud_cluster, int n = 1);
@@ -69,7 +74,7 @@ public:
     void plane_fill_2D();
 
     void caculate_clean_border(bool fix = false);
-    bool ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud, float fit_threshold_percent = 0.4f, float dis_threshold = 3.0f);
+    bool ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud, float fit_threshold_percent = 0.4f, float dis_threshold = 3.0f, int plane_no = 999);
     int lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, float line_threshold_percent = 0.2f, float line_dis_threshold = 0.05f, int plane_no = 999);
     void shape_fix(int plane_no);
 
