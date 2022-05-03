@@ -9,7 +9,6 @@
 #include <pcl/point_types.h>
 #include <pcl/filters/passthrough.h>
 
-
 typedef pcl::PointXYZ PointT;
 
 using namespace cv;
@@ -83,7 +82,7 @@ pcl::PointCloud<PointT>::Ptr depth2cloud(std::string filename, bool test)
 
 	// x / gridx = depth / constant  �����ʵ��(���)�����������ı� ���� ʵ��������grid����ı�
 	Mat xgrid = rangeH.t() * Mat::ones(1, imw, CV_32F);
-	Mat ygrid = Mat::ones(imh, 1, CV_32F) * rangeW ;
+	Mat ygrid = Mat::ones(imh, 1, CV_32F) * rangeW;
 
 	Mat X = xgrid.mul(Depth) / change;
 	Mat Y = ygrid.mul(Depth) / change;
@@ -128,7 +127,7 @@ pcl::PointCloud<PointT>::Ptr depth2cloud(std::string filename, bool test)
 
 		// remove suffix ".png"
 		int start = filename.rfind("/"), end = filename.rfind("-depth");
-		start = start==std::string::npos?0:start;
+		start = start == std::string::npos ? 0 : start;
 		std::string purename = filename.substr(start, end - start);
 
 		// //remove suffix ".png"
@@ -208,15 +207,15 @@ pcl::PointCloud<PointT>::Ptr mat2cloud(cv::Mat Depth)
 
 	return cloud;
 }
-
-int png2video()
+/*
+	输入文件夹名，将文件夹内所有图片转化为一个视频，与输入文件夹同名，存储在文件夹所在位置
+*/
+int png2video(std::string img_path)
 {
-	cv::utils::logging::setLogLevel(utils::logging::LOG_LEVEL_SILENT); //���������־
+	cv::utils::logging::setLogLevel(utils::logging::LOG_LEVEL_SILENT);
 
-	// cv.VideoWriter(	�ļ�����fourcc��fps��frameSize[��isColor]	) ->	<VideoWriter ����>
-	VideoWriter video("test.avi", VideoWriter::fourcc('X', 'V', 'I', 'D'), 24.0, Size(640, 480));
+	VideoWriter video(img_path+".avi", VideoWriter::fourcc('X', 'V', 'I', 'D'), 24.0, Size(640, 480));
 
-	String img_path = "F:\\rgbd-scenes-v2_imgs\\rgbd-scenes-v2\\imgs\\scene_01";
 	std::vector<String> img;
 
 	cv::glob(img_path, img, false);
@@ -231,10 +230,10 @@ int png2video()
 		{
 			resize(image, image, Size(640, 480));
 			video << image;
-			std::cout << "���ڴ�����" << i << "֡" << std::endl;
+			std::cout << "input " << i << "֡" << std::endl;
 		}
 	}
-	std::cout << "������ϣ�" << std::endl;
+	std::cout << "finish" << std::endl;
 
 	return 0;
 }

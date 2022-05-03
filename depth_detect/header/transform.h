@@ -15,3 +15,5 @@ pcl::PointCloud<PointT>::Ptr depth2cloud(std::string filename, bool test=false);
 pcl::PointCloud<PointT>::Ptr mat2cloud(cv::Mat Depth);
 
 cv::Mat depth_to_uint8(cv::Mat depth);
+
+int png2video(std::string img_path);
