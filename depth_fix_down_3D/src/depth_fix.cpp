@@ -39,20 +39,20 @@ void detect_2D_Example()
 	pcl::console::TicToc tt;
 	tt.tic();
 
-	// cv::String imagefolder = "../scene_11/*-depth.png";
-	// std::vector<std::string> image_paths;
-	// cv::glob(imagefolder, image_paths, false);
+	cv::String imagefolder = "../scene_11/*-depth.png";
+	std::vector<std::string> image_paths;
+	cv::glob(imagefolder, image_paths, false);
 
-	// // object-merge(object-merge opencv可能会产生莫名其妙创建错误)
-	// //  #pragma omp parallel for
-	// for (auto image_path : image_paths)
-	// {
-	// int start = image_path.rfind("/"), end = image_path.rfind("-depth");
-	// start = start == std::string::npos ? 0 : start + 1;
-	// std::string image_no = image_path.substr(start, end - start);
-	// std::cout << "depth detect: " << image_no << std::endl;
-	std::string image_no = "00000";
-	std::string image_path = "../scene_01/00000-depth.png";
+	// object-merge(object-merge opencv可能会产生莫名其妙创建错误)
+	//  #pragma omp parallel for
+	for (auto image_path : image_paths)
+	{
+	int start = image_path.rfind("/"), end = image_path.rfind("-depth");
+	start = start == std::string::npos ? 0 : start + 1;
+	std::string image_no = image_path.substr(start, end - start);
+	std::cout << "depth detect: " << image_no << std::endl;
+	// std::string image_no = "00000";
+	// std::string image_path = "../scene_01/00000-depth.png";
 
 	DepthDetect dd(image_path, 2, 0.8f);
 
@@ -84,7 +84,7 @@ void detect_2D_Example()
 	}
 	cv::imwrite("../output/" + image_no + "-seg.png", color_seg_image);
 	// 	cv::imshow("object_detect_2D", color_seg_image);
-	// }
+	}
 
 	// std::cout << "[done, " << tt.toc() << " ms ]" << std::endl;
 }
