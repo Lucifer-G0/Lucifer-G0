@@ -27,6 +27,8 @@ private:
     int OBB_no = 0;                              //包围盒数量,显示id使用
     pcl::PointCloud<PointT>::Ptr cloud_junction; //交界点云，随后随部分物体加入背景点云
 
+    void cloud_save(std::string name,pcl::PointCloud<PointT>::Ptr cloud);
+
     // for BackGround
 public:
     void back_plane_fix(pcl::PointCloud<PointT>::Ptr cloud, pcl::PointIndices::Ptr inliers, pcl::ModelCoefficients::Ptr coefficients, int back_object_no);

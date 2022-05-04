@@ -23,6 +23,21 @@
 #include "MyColor.hpp"
 
 /*
+    name 自动增加后缀 "_cloud_rz.pcd"
+    构建在右手坐标系,显示为左手坐标系,将z值取反
+*/
+void DepthDetect::cloud_save(std::string name, pcl::PointCloud<PointT>::Ptr cloud)
+{
+    pcl::PointCloud<PointT>::Ptr cloud_show(new pcl::PointCloud<PointT>);
+    for (PointT point : *cloud)
+    {
+        cloud_show->push_back(PointT(point.x, point.y, -point.z)); //显示需要,z取反
+    }
+    pcl::io::savePCDFile(name + "_cloud_rz.pcd", *cloud_show);
+    std::cout << name << "_cloud_rz: " << cloud_show->size() << std::endl;
+}
+
+/*
     @param  dimension: (default=2),2或3,表示期待结果为2维或者3维
     @param  back_threshold_percent: (default= 0.85f) 用于计算背景的深度阈值，百分比形式。0.85比较合适？
     @param  fore_seg_threshold_percent: (default=0.1f)前景分割是否平面阈值，前景点云大小的百分比
@@ -48,13 +63,7 @@ DepthDetect::DepthDetect(std::string depth_path, int _dimension, float back_thre
 
     pcl::PointCloud<PointT>::Ptr cloud(new pcl::PointCloud<PointT>);
     cloud = depth2cloud(depth_path);
-    // cloud_primitive = pcl::PointCloud<PointT>::Ptr(new pcl::PointCloud<PointT>);
-    // for(PointT point:*cloud)
-    // {
-    //     cloud_primitive->push_back(PointT(point.x,point.y,-point.z));//显示需要,z取反
-    // }
-    // pcl::io::savePCDFile("before.pcd", *cloud);
-    // std::cout << "before: " << cloud->size() << std::endl;
+    // cloud_save("primitive", cloud);
 
     if (dimension == 2)
     {
@@ -97,12 +106,10 @@ DepthDetect::DepthDetect(std::string depth_path, int _dimension, float back_thre
     pass.filter(*cloud_junction); //交界点云
     pass.setFilterLimits(0.001, back_threshold - 0.5 - 0.001);
     pass.filter(*cloud_foreground); //前景点云,需注意前景必须去除零点，因为零点占相当大部分
-    // pcl::io::savePCDFile("foreground.pcd", *cloud_foreground);
-    // std::cout << "foreground: " << cloud_foreground->size() << std::endl;
-    // pcl::io::savePCDFile("background.pcd", *cloud_background);
-    // std::cout << "background: " << cloud_background->size() << std::endl;
-    // pcl::io::savePCDFile("junction.pcd", *cloud_junction);
-    // std::cout << "junction: " << cloud_junction->size() << std::endl;
+
+    // cloud_save("fore", cloud_foreground);
+    // cloud_save("junc", cloud_junction);
+    // cloud_save("back", cloud_background);
 
     fore_seg_threshold = fore_seg_threshold_percent * cloud_foreground->size();
 
@@ -229,7 +236,7 @@ void DepthDetect::show_3D(bool box)
     viewer->addPointCloud<pcl::PointXYZ>(view_ground_cloud, single_color, "ground", 0);
     if (box)
         add_detect_OBB(view_ground_cloud, viewer, cv::Vec3f(0.5, 0, 0.5));
-    
+
     viewer->initCameraParameters();
     viewer->setCameraPosition(-1, -2, 5, -1, 0, 0, 0);
     viewer->setRepresentationToWireframeForAllActors(); //显示为线框
@@ -315,6 +322,7 @@ pcl::PointCloud<PointC>::Ptr DepthDetect::get_color_pointcloud()
 */
 void DepthDetect::back_cluster_extract(float back_ec_dis_threshold, bool fix, float plane_seg_dis_threshold)
 {
+    // cloud_save("final_back", cloud_background);
     //----------------------对背景聚类-------------------------------------------------------------
     pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>());
     tree->setInputCloud(cloud_background);
@@ -338,6 +346,7 @@ void DepthDetect::back_cluster_extract(float back_ec_dis_threshold, bool fix, fl
         back_obj_cloud_cluster->height = 1;
         back_obj_cloud_cluster->is_dense = true;
         back_object_clouds.push_back(*back_obj_cloud_cluster);
+        // cloud_save("back_object_"+std::to_string(vp_no),back_obj_cloud_cluster);
         if (fix)
         {
             //------------------- Create the segmentation object for the planar model and set all the parameters----------------
@@ -594,6 +603,8 @@ void DepthDetect::planar_seg(float _plane_seg_dis_threshold, float _layer_seg_di
             extract.setNegative(false);
             extract.filter(*cloud_plane);
 
+            // cloud_save("hplane_" + std::to_string(i), cloud_plane);
+
             if (abs(D) > max_D) //如果怀疑是地面，那就把整个平面暂存。如果有新的到来，把老的拿出来，新的存进去。
             {
                 max_D = abs(D);
@@ -667,11 +678,10 @@ void DepthDetect::planar_seg(float _plane_seg_dis_threshold, float _layer_seg_di
                         int c = round(point.y * constant / point.z); //使用round实现四舍五入的float转int,默认的float转int只取整数位。
                         seg_image.at<uchar>(r, c) = hp_no;
                     }
-                    // std::stringstream ss;
-                    // ss << "plane_cluster_" << hp_no << ".pcd";
-                    // pcl::io::savePCDFile(ss.str(), *cloud_cluster);
 
-                    plane_border_clouds.push_back(*extract_border(cloud_cluster));
+                    // cloud_save("plane_cluster_" + std::to_string(hp_no), cloud_cluster);
+
+                    plane_border_clouds.push_back(*extract_border(cloud_cluster, 3));
                     plane_clouds.push_back(*cloud_cluster);
                     hp_no++; //存入了新的平面聚类,平面序号加一
                 }
@@ -686,18 +696,27 @@ void DepthDetect::planar_seg(float _plane_seg_dis_threshold, float _layer_seg_di
             extract.filter(*cloud_vp);
             for (auto &point : *cloud_vp)
                 cloud_vps->push_back(point);
-
+            // cloud_save("cloud_vps", cloud_vp);
             //---------Remove the planar inliers, extract the rest----------
             extract.setNegative(true);
             extract.filter(*cloud_foreground);
         }
     }
+    // cloud_save("ground_before_complete", ground_cloud);
     //平面聚类识别结束，非地面平面聚类存入数据，平面仍在暂存中，将平面画到图上。
     if (ground_is_stored) //如果暂存非空，将暂存存入一般平面、边界
+    {
         ground_complete();
+        // cloud_save("ground_after_complete", ground_cloud);
+        // cloud_save("junc_after_complete", cloud_junction);
+        // cloud_save("back_after_complete", cloud_background);
+    }
+
     //将竖面返回给剩余点云
     for (auto &point : *cloud_vps)
         cloud_foreground->push_back(point);
+
+    // cloud_save("fore_left", cloud_foreground);
 }
 /*
     根据地面模型系数，从交界和背景中抽取数据，将地面完整化
@@ -728,11 +747,13 @@ void DepthDetect::ground_complete()
     junc_ground_filter.setNegative(true);
     junc_ground_filter.filter(*cloud_junction);
 
-    // pcl::io::savePCDFile("ground.pcd", *ground_cloud);
-    *ground_cloud += *cloud_background_plane;
-    // pcl::io::savePCDFile("ground_back.pcd", *ground_cloud);
+    // cloud_save("ground_junc", cloud_junction_plane);
+    // cloud_save("ground_back", cloud_background_plane);
+
     *ground_cloud += *cloud_junction_plane;
-    // pcl::io::savePCDFile("ground_back_junc.pcd", *ground_cloud);
+    *ground_cloud += *cloud_background_plane;
+
+    // cloud_save("ground_fore_junc_back", ground_cloud);
 
     pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>());
     std::vector<pcl::PointIndices> cluster_indices;
@@ -1079,13 +1100,13 @@ void DepthDetect::object_detect(float ec_dis_threshold)
 
         plane_idx_ends.push_back(plane_idx_end);
     }
-    // pcl::io::savePCDFile("border_cloud.pcd", *cloud);
+    // cloud_save("all_border", cloud);
     //将交界点云拷贝到新点云
     for (auto &point : *cloud_junction)
     {
         cloud->push_back(point);
     }
-    // pcl::io::savePCDFile("border_junc_cloud.pcd", *cloud);
+    // cloud_save("all_border_junc", cloud);
     //确定交界点云的索引区域
     int junction_end_idx;
     if (plane_num != 0)
@@ -1097,7 +1118,7 @@ void DepthDetect::object_detect(float ec_dis_threshold)
     for (auto &point : *cloud_foreground)
         cloud->push_back(point);
 
-    // pcl::io::savePCDFile("border_junc_fore_cloud.pcd", *cloud);
+    // cloud_save("border_junc_fore", cloud);
 
     //-------------step1:对结合平面边缘的剩余点云进行距离聚类-------------------------------
     pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>());
@@ -1195,7 +1216,7 @@ void DepthDetect::object_detect(float ec_dis_threshold)
             //遍历聚类，修改聚类内点二维映射为物体编号。
             for (const auto &idx : it->indices)
                 object_cloud_cluster->push_back((*cloud)[idx]);
-
+            // cloud_save("object_" + std::to_string(object_no), object_cloud_cluster);
             object_clouds.push_back(*object_cloud_cluster);
             //加入了一个新物体,序号加一
             object_no++;
@@ -1220,6 +1241,12 @@ void DepthDetect::object_detect(float ec_dis_threshold)
             }
         }
     }
+
+    // for(int i=0;i<plane_clouds.size();i++)
+    // {
+    //     if(plane_clouds[i].size()!=0)
+    //         cloud_save("plane_merge_"+std::to_string(i),plane_clouds[i].makeShared());
+    // }
 }
 
 /*
@@ -1456,7 +1483,6 @@ void DepthDetect::caculate_clean_border(bool fix)
             sor.setMeanK(10);
             sor.setStddevMulThresh(0.2);
             sor.filter(*border_cloud);
-
         }
         // std::stringstream ss2;
         // ss2 << "plane_" << plane_no << "_sor_border.pcd";
@@ -1551,8 +1577,8 @@ int DepthDetect::lines_fit(pcl::PointCloud<PointT>::Ptr border_cloud, float line
                 cloud_pure_border->push_back(point); //遍历平面边缘内点
 
             // std::stringstream ss1;
-            // ss1 << "plane_" << plane_no << "_" << line_num << "_pure_border.pcd";
-            // pcl::io::savePCDFile(ss1.str(), *cloud_line_border);
+            // ss1 << "plane_" << plane_no << "_" << line_num << "_pure_border";
+            // cloud_save(ss1.str(), cloud_line_border);
 
             //将直线从边界点云中去除
             line_extract.setNegative(true);
@@ -1643,8 +1669,8 @@ bool DepthDetect::ellipse_fit(pcl::PointCloud<PointT>::Ptr border_cloud, float f
             border_point_idx++;
         }
         // std::stringstream ss1;
-        // ss1 << "plane_" << plane_no << "_ellipse_pure_border.pcd";
-        // pcl::io::savePCDFile(ss1.str(), *cloud_pure_border);
+        // ss1 << "plane_" << plane_no << "_ellipse_pure_border";
+        // cloud_save(ss1.str(), cloud_pure_border);
         //---------------------store inlier points in plane_pure_border_clouds ---------------------------------
         plane_pure_border_clouds.push_back(*cloud_pure_border);
         return true;
@@ -1803,6 +1829,12 @@ void DepthDetect::object_merge(float merge_threshold)
     }
     delete[] IOUs; //释放指针和
     IOUs = NULL;
+
+    // for(int i=0;i<object_clouds.size();i++)
+    // {
+    //     if(object_clouds[i].size()!=0)
+    //         cloud_save("object_merge_"+std::to_string(i),object_clouds[i].makeShared());
+    // }
 }
 
 /*
